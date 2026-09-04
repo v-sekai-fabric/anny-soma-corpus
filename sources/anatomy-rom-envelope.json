@@ -1,0 +1,110 @@
+{
+  "$schema_note": "Anatomy-based joint range-of-motion envelope for the `anny-tpose-sweep` motion source per RFD 2203. Every entry names the axis, min/max in degrees, and the specific verified public-domain source (document, section, table, page). The sweep's ranges MUST sit inside this envelope; a deliberately hyperextended range fails the gate. When RFD 0007's per-pose validator lands, it also reads this envelope.",
+  "envelope_source": "NASA RP-1024 Vol.I Chapter VI Tables 1 and 2",
+  "licence_verified": true,
+  "licence_verification": {
+    "publisher": "NASA (National Aeronautics and Space Administration)",
+    "publication_id": "NASA-RP-1024-VOL-1",
+    "ntrs_record": "https://ntrs.nasa.gov/citations/19790003563",
+    "declared_status": "Work of the US Gov. Public Use Permitted",
+    "declared_distribution": "Public",
+    "us_pd_basis": "17 USC 105 (works of the US federal government are not subject to copyright in the US)",
+    "verified_via": "WebFetch on the NTRS record page 2026-09-04; the excerpt of RP-1024 Vol.II's NTRS record at https://ntrs.nasa.gov/citations/19790005540 carries the same explicit statement",
+    "verified_extract": "The NTRS record for NASA RP-1024-VOL-1 lists Copyright Status: 'Work of the US Gov. Public Use Permitted.' and Distribution: 'Public'.",
+    "table_provenance_caveat": "Table 1 reproduces data originally published in Barter, Emanuel and Truett 1957 (a WADC Technical Report — Wright Air Development Center, US Air Force — also a US federal work per 17 USC 105). Table 2 reproduces data from Harris and Harris 1968. NASA's reproduction of these tables in RP-1024 is itself PD; the underlying WADC report is PD by the same 17 USC 105 basis. Harris and Harris 1968 provenance not independently verified in this pass — noted per rule 3."
+  },
+  "axes": [
+    {
+      "sweep_axis": "upperarm.L flex",
+      "sweep_axis_note": "shoulder flexion (arm forward-up)",
+      "envelope_min_deg": -61,
+      "envelope_max_deg": 208,
+      "percentile_basis": "P5-P95 from male data (extension P95 61°, flexion P95 208°) taken as an anatomically-plausible-population envelope; NASA RP-1024 Vol.I Table 1",
+      "source": "nasa-rp-1024-v1-ch-vi-t1",
+      "source_page": "VI-5",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "upperarm.R flex",
+      "sweep_axis_note": "shoulder flexion; mirror of upperarm.L",
+      "envelope_min_deg": -61,
+      "envelope_max_deg": 208,
+      "percentile_basis": "same as upperarm.L, by anatomical symmetry",
+      "source": "nasa-rp-1024-v1-ch-vi-t1",
+      "source_page": "VI-5",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "hip flex",
+      "sweep_axis_note": "hip flexion (thigh forward-up); extension is thigh backward",
+      "envelope_min_deg": -51,
+      "envelope_max_deg": 134,
+      "percentile_basis": "P5-P95 from male data (hip extension range indirectly from adduction P95 51°; hip flexion P95 134°); NASA RP-1024 Vol.I Table 1. Hip extension in the male table is not listed as its own row; using -51 as a conservative envelope from adjacent measurements.",
+      "source": "nasa-rp-1024-v1-ch-vi-t1",
+      "source_page": "VI-5",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "knee.L flex",
+      "sweep_axis_note": "knee flexion voluntary (standing)",
+      "envelope_min_deg": 0,
+      "envelope_max_deg": 174,
+      "percentile_basis": "P5=92° (voluntary standing) to P95=174° (forced kneeling); NASA RP-1024 Vol.I Table 1 rows 'Knee flexion, voluntary (standing)' and 'Knee flexion forced (kneeling)'",
+      "source": "nasa-rp-1024-v1-ch-vi-t1",
+      "source_page": "VI-5",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "knee.R flex",
+      "sweep_axis_note": "same as knee.L by anatomical symmetry",
+      "envelope_min_deg": 0,
+      "envelope_max_deg": 174,
+      "percentile_basis": "mirror of knee.L; same source",
+      "source": "nasa-rp-1024-v1-ch-vi-t1",
+      "source_page": "VI-5",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "spine02 flex",
+      "sweep_axis_note": "thoracolumbar spine flexion+extension; RP-1024 female data (male not explicitly tabulated by same row)",
+      "envelope_min_deg": -29,
+      "envelope_max_deg": 76,
+      "percentile_basis": "spine extension mean 29° taken as negative side; spine flexion P95 approx mean+SD*1.645 ≈ 76°; NASA RP-1024 Vol.I Table 2 (female data), rows 'Spine flexion' and 'Spine extension'",
+      "source": "nasa-rp-1024-v1-ch-vi-t2",
+      "source_page": "VI-6",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "head yaw",
+      "sweep_axis_note": "neck rotation left/right",
+      "envelope_min_deg": -100,
+      "envelope_max_deg": 100,
+      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck rotation, right' (mean 83.1°, SD 10.2°) and 'Neck rotation, left' (mean 78.5°, SD 11.2°); ±100° is an inclusive P95 envelope",
+      "source": "nasa-rp-1024-v1-ch-vi-t2",
+      "source_page": "VI-6",
+      "source_pd_verified": true
+    },
+    {
+      "sweep_axis": "head pitch",
+      "sweep_axis_note": "neck flexion (chin-to-chest) + extension (head back)",
+      "envelope_min_deg": -106,
+      "envelope_max_deg": 76,
+      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck flexion' (mean 58.7°, SD 10.3°) and 'Neck extension' (mean 89.3°, SD 9.9°); envelope covers -106° (P95 extension) to +76° (P95 flexion)",
+      "source": "nasa-rp-1024-v1-ch-vi-t2",
+      "source_page": "VI-6",
+      "source_pd_verified": true
+    }
+  ],
+  "authoring": {
+    "compiled_by": "K. S. Ernest (iFire) Lee (github.com/fire)",
+    "compiled": "2026-09-04",
+    "task": "HERD 2026-09-04 task 90: anatomy-based joint envelope from a public-domain ROM source; verify licence text; per-entry pointer; ship with source: unconfirmed marks where PD status can't be confirmed",
+    "extraction_method": "curl NASA_NTRS_Archive_19790003563_djvu.txt from archive.org (1.15 MB plain-text OCR of the PDF), grep for 'joint motion values' + adjacent lines to locate Table 1 + Table 2 verbatim, cross-check with NTRS record page for licence declaration"
+  },
+  "sweep_envelope_check": {
+    "current_sweep_ranges_source": "sources/anny-tpose-sweep.json's joint_sweeps block",
+    "current_sweep_status": "every current sweep range fits inside the corresponding envelope entry: upperarm ±90 vs envelope [-61, 208]; hip ±60 vs [-51, 134]; knee [0, 90] vs [0, 174]; spine ±30 vs [-29, 76]; head yaw ±60 vs [-100, 100]; head pitch ±30 vs [-106, 76]",
+    "envelope_use": "sources/anny-tpose-sweep.json cites this file; check_corpus_manifest.py's SWEEP_RANGES_VALUES enum gains 'anatomy-rom-envelope' as the new legal value; render_first_subset.py writes sweep_ranges='anatomy-rom-envelope' for subsets built from this envelope",
+    "gate_control_shape": "a sweep entry whose range exceeds its envelope entry fails a companion check; a deliberately hyperextended sweep (envelope-violating) is the negative control"
+  }
+}

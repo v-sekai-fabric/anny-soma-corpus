@@ -97,6 +97,25 @@ references:
     title: "RFD 1173: A multimodal diffusion pipeline"
     url: https://github.com/weftspun/request-for-discussion/tree/main/rfd/1173-a-multimodal-diffusion-pipeline
     notes: This corpus feeds the RFD 1173 keypoints stub.
+  # NASA RP-1024 -- public-domain anatomical ROM source for the anny-tpose-sweep joint envelope
+  - type: report
+    title: "Anthropometric Source Book, Volume I: Anthropometry for Designers"
+    authors:
+      - name: "NASA (Anthropology Research Project)"
+    number: NASA-RP-1024-VOL-1
+    year: 1978
+    url: https://ntrs.nasa.gov/citations/19790003563
+    license: "public-domain-us-federal"
+    notes: >-
+      Work of the US Government per 17 USC 105; NTRS record declares "Work
+      of the US Gov. Public Use Permitted", Distribution: Public. Chapter VI
+      Tables 1 and 2 supply the anatomical joint ROM envelope used to bound
+      the `anny-tpose-sweep` motion source's parametric sweep ranges (see
+      `sources/anatomy-rom-envelope.json`). Table 1 reproduces data from
+      Barter, Emanuel and Truett 1957 (a WADC Technical Report — Wright
+      Air Development Center, US Air Force, also PD by 17 USC 105).
+      Table 2 reproduces data from Harris and Harris 1968; provenance not
+      independently verified this pass, noted per CLAUDE.md rule 3.
   # RFD 2196 -- the HF publishing rules
   - type: generic
     title: "RFD 2196: HuggingFace dataset viewer rules"
