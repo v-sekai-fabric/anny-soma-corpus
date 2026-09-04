@@ -343,6 +343,16 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
         # geographically-correct within 6mm median / 12mm worst-cap.
         # Refinement subsets can carry other values as new labels land.
         "keypoints_2d_face_status": keypoints_2d_face_status,
+        # Rule-3 honesty on the sweep envelope's source (constructed
+        # subsets) and per-pose validation (all subsets). Both start
+        # as literal "hand-picked" / "none" because ANCHOR's ROM
+        # envelope + HERO's RFD 0007 gate are tracked deliverables
+        # not yet landed. Values flip to the source path / "rfd_0007"
+        # when those land in follow-up subsets. Gate script asserts
+        # the field is present with an allowlisted value; "none"
+        # explicit is legal, missing is not.
+        "sweep_ranges": "hand-picked",   # or "<source>" once anatomy ROM envelope lands
+        "pose_validation": "none",       # or "rfd_0007" once foot-Y+joint-limit gate lands
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
