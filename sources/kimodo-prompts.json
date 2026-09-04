@@ -57,8 +57,8 @@
   },
   "provenance": {
     "condition_1_generator": "Kimodo-SOMA-RP-v1.1 checkpoint (NVIDIA Open Model License) invoked at the per-prompt seed above; each shard's manifest records the checkpoint hash + the prompt text + the seed under sampler_config.kimodo",
-    "condition_2_stored_separately": "this file names motion_source=kimodo; the shard manifest's motion_source field records it, distinct from any soma-library subset per RFD 2203 living-dataset doctrine",
-    "condition_3_not_sole_distribution": "the corpus MUST also carry at least one soma-library (constructed-pose) subset before any training run consumes it. `check_corpus_manifest.py` asserts this at corpus level (task 3 gate extension)",
+    "condition_2_stored_separately": "this file names motion_source=kimodo; the shard manifest's motion_source field records it, distinct from any anny-tpose-sweep subset per RFD 2203 living-dataset doctrine",
+    "condition_3_not_sole_distribution": "the corpus MUST also carry at least one anny-tpose-sweep (constructed-pose) subset before any training run consumes it. `check_corpus_manifest.py` asserts this at corpus level (task 3 gate extension)",
     "condition_4_evaluation_on_real_or_constructed": "blinded holdout coco_person_commercial_val2017 remains the evaluation set per CLAUDE.md; kimodo subsets are training-only"
   },
   "authoring": {
