@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this corpus, please cite:"
+title: "anny-soma-corpus: ANNY-SOMA keypoint corpus for RFD 1173"
+type: dataset
+authors:
+  - name: "Weftspun (HERO session)"
+license: apache-2.0
+date-released: "2026-09-04"
+url: "https://github.com/weftspun/anny-soma-corpus"
+references:
+  - type: software
+    title: "anny"
+    authors:
+      - name: "NAVER"
+    repository-code: "https://github.com/naver/anny"
+    license: "Apache-2.0"
+  - type: software
+    title: "kimodo"
+    authors:
+      - name: "NVIDIA"
+    repository-code: "https://github.com/nv-tlabs/kimodo"
+    license: "Apache-2.0"
+    notes: "Kimodo-SOMA-RP-v1.1 checkpoint under NVIDIA Open Model License."
+  - type: generic
+    title: "RFD 2203: first-subset row shape for the ANNY-SOMA keypoint corpus"
+    notes: "Row shape and publish path are decided here."
+keywords:
+  - keypoints
+  - motion
+  - anny
+  - soma
+  - kimodo
+  - rfd-1173
+  - rfd-2203

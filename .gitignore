@@ -1,0 +1,10 @@
+# Corpus artefacts live on HF, not here — this repo is spec + render script + manifest schema.
+data/
+*.parquet
+*.npz
+*.png
+*.jpg
+__pycache__/
+*.pyc
+.pixi/
+.venv/
