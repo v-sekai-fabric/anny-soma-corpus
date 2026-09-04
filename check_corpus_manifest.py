@@ -44,6 +44,8 @@ SYNTHETIC_CLASS_FOR = {
 # values until an anatomy-based joint envelope and RFD 0007's per-pose validator exist;
 # what the gate forbids is silence about them (a missing field reads exactly like a pass).
 SWEEP_RANGES_VALUES = ("hand-picked", "anatomy-rom-envelope")
+ENVELOPE_SOURCE_PATH = pathlib.Path(__file__).parent / "sources" / "anatomy-rom-envelope.json"
+SWEEP_SOURCE_PATH = pathlib.Path(__file__).parent / "sources" / "anny-tpose-sweep.json"
 POSE_VALIDATION_VALUES = ("none", "rfd_0007")
 REQUIRED_ROW_COLUMNS = (
     "image", "camera", "anny_posed_vertices", "keypoints_2d", "soma_pose",
@@ -180,6 +182,32 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
         text = readme.read_text(encoding="utf-8")
         if "configs:" not in text and "config_name:" not in text:
             bad.append("README.md is missing a HF-viewer configs: block")
+    return bad
+
+
+def check_sweep_inside_envelope(sweep_path=SWEEP_SOURCE_PATH,
+                                envelope_path=ENVELOPE_SOURCE_PATH) -> list[str]:
+    """Every joint_sweep entry in the sweep source must fit inside the corresponding
+    envelope entry's [envelope_min_deg, envelope_max_deg]. A sweep whose range exceeds
+    the envelope is anatomically implausible."""
+    bad = []
+    if not sweep_path.is_file() or not envelope_path.is_file():
+        return bad
+    sweep = json.loads(sweep_path.read_text(encoding="utf-8"))
+    envelope = {a["sweep_axis"]: a for a in json.loads(
+        envelope_path.read_text(encoding="utf-8"))["axes"]}
+    for entry in sweep.get("procedural_variations", {}).get("joint_sweeps", []):
+        axis_key = "%s %s" % (entry["joint"], entry["axis"])
+        env = envelope.get(axis_key)
+        if env is None:
+            bad.append("sweep axis %r has no envelope entry in %s"
+                       % (axis_key, envelope_path.name))
+            continue
+        lo, hi = entry["range_deg"]
+        if lo < env["envelope_min_deg"] or hi > env["envelope_max_deg"]:
+            bad.append("sweep %r range [%d, %d] escapes envelope [%d, %d] (%s)"
+                       % (axis_key, lo, hi,
+                          env["envelope_min_deg"], env["envelope_max_deg"], env["source"]))
     return bad
 
 
@@ -418,6 +446,20 @@ def self_test() -> int:
         cases.append(("missing pose_validation rejected (rule 3)",
                       check_subset(missing_val, pth_file), False))
 
+        env_bad = check_sweep_inside_envelope()
+        cases.append(("sweep sits inside anatomy ROM envelope",
+                      env_bad, True))
+
+        planted_sweep = root / "hyperextended_sweep.json"
+        planted_env = root / "envelope_copy.json"
+        original_sweep = json.loads(SWEEP_SOURCE_PATH.read_text(encoding="utf-8"))
+        planted = json.loads(json.dumps(original_sweep))
+        planted["procedural_variations"]["joint_sweeps"][0]["range_deg"] = [-999, 999]
+        planted_sweep.write_text(json.dumps(planted), encoding="utf-8")
+        planted_env.write_text(ENVELOPE_SOURCE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        cases.append(("hyperextended sweep exceeds envelope rejected",
+                      check_sweep_inside_envelope(planted_sweep, planted_env), False))
+
         mixed_root = root / "mixed_corpus"
         mixed_root.mkdir()
         for i, ms in enumerate(("anny-tpose-sweep", "kimodo")):
@@ -450,6 +492,8 @@ def main() -> int:
     ap.add_argument("--subset", type=pathlib.Path, help="directory holding shards + manifest.json")
     ap.add_argument("--corpus", type=pathlib.Path,
                     help="directory holding subset-*/ subdirectories, each with manifest.json")
+    ap.add_argument("--envelope-check", action="store_true",
+                    help="check the sweep source fits inside the anatomy ROM envelope")
     ap.add_argument("--anchors-pth", type=pathlib.Path, default=None,
                     help="path to wholebody133.pth on anchors main; hash cross-check skipped if omitted")
     ap.add_argument("--self-test", action="store_true")
@@ -463,8 +507,10 @@ def main() -> int:
         bad.extend(check_subset(args.subset, args.anchors_pth))
     if args.corpus is not None:
         bad.extend(check_corpus(args.corpus))
-    if args.subset is None and args.corpus is None:
-        sys.exit("--subset or --corpus (or --self-test) required")
+    if args.envelope_check:
+        bad.extend(check_sweep_inside_envelope())
+    if args.subset is None and args.corpus is None and not args.envelope_check:
+        sys.exit("--subset, --corpus, or --envelope-check (or --self-test) required")
 
     for b in bad:
         print("  FAIL  %s" % b)

@@ -35,14 +35,15 @@
     }
   ],
   "procedural_variations": {
-    "description": "Deterministic pose construction on top of the T-pose per axis. `renderer` iterates these ranges at the specified stride and produces one posed frame per (base_rest_pose, variation) combination. All rotations are named joint targets, no sampling, so the outputs are `constructed` per CLAUDE.md.",
+    "description": "Deterministic pose construction on top of the T-pose per axis. `renderer` iterates these ranges at the specified stride and produces one posed frame per (base_rest_pose, variation) combination. All rotations are named joint targets, no sampling, so the outputs are `constructed` per CLAUDE.md. Every range fits inside the anatomy ROM envelope at `sources/anatomy-rom-envelope.json` (NASA RP-1024 Vol.I, PD verified); `check_corpus_manifest.py --envelope-check` asserts this and a deliberately hyperextended range fails.",
+    "envelope_source": "sources/anatomy-rom-envelope.json",
     "joint_sweeps": [
-      {"joint": "upperarm.L", "axis": "flex", "range_deg": [-90, 90], "stride_deg": 30},
-      {"joint": "upperarm.R", "axis": "flex", "range_deg": [-90, 90], "stride_deg": 30},
-      {"joint": "hip", "axis": "flex", "range_deg": [-60, 60], "stride_deg": 30},
+      {"joint": "upperarm.L", "axis": "flex", "range_deg": [-60, 90], "stride_deg": 30},
+      {"joint": "upperarm.R", "axis": "flex", "range_deg": [-60, 90], "stride_deg": 30},
+      {"joint": "hip", "axis": "flex", "range_deg": [-45, 90], "stride_deg": 30},
       {"joint": "knee.L", "axis": "flex", "range_deg": [0, 90], "stride_deg": 30},
       {"joint": "knee.R", "axis": "flex", "range_deg": [0, 90], "stride_deg": 30},
-      {"joint": "spine02", "axis": "flex", "range_deg": [-30, 30], "stride_deg": 15},
+      {"joint": "spine02", "axis": "flex", "range_deg": [-15, 30], "stride_deg": 15},
       {"joint": "head", "axis": "yaw", "range_deg": [-60, 60], "stride_deg": 30},
       {"joint": "head", "axis": "pitch", "range_deg": [-30, 30], "stride_deg": 15}
     ],
