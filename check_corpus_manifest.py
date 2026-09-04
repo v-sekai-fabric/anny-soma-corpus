@@ -34,6 +34,12 @@ REQUIRED_MANIFEST_KEYS = (
 )
 WHOLEBODY133_ANCHOR_COUNT = 133
 PROJECTION_CHECK_KINDS = ("body_surface", "bone_tracking", "none")
+MOTION_SOURCE_NAMES = ("soma-library", "kimodo")
+CONSTRUCTED_MOTION_SOURCES = frozenset(("soma-library",))
+SYNTHETIC_CLASS_FOR = {
+    "soma-library": "constructed",
+    "kimodo": "constructed-renders-over-generated-poses",
+}
 REQUIRED_ROW_COLUMNS = (
     "image", "camera", "anny_posed_vertices", "keypoints_2d", "soma_pose",
 )
@@ -98,6 +104,18 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
                 bad.append("manifest key %r names an accuracy/verified/spread field but no "
                            "quantity noun (%s)" % (key, ", ".join(QUANTITY_NOUNS)))
 
+    ms = manifest.get("motion_source")
+    ms_name = ms.get("name") if isinstance(ms, dict) else ms
+    if ms_name not in MOTION_SOURCE_NAMES:
+        bad.append("motion_source.name %r not in %s (RFD 2203)"
+                   % (ms_name, MOTION_SOURCE_NAMES))
+    else:
+        sc = manifest.get("synthetic_class")
+        expected = SYNTHETIC_CLASS_FOR[ms_name]
+        if sc != expected:
+            bad.append("synthetic_class %r for motion_source %r must be %r "
+                       "(CLAUDE.md constructed vs generated)" % (sc, ms_name, expected))
+
     if anchors_pth is not None:
         if not anchors_pth.is_file():
             bad.append("--anchors-pth %s does not exist" % anchors_pth)
@@ -151,6 +169,34 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
     return bad
 
 
+def check_corpus(root: pathlib.Path) -> list[str]:
+    """Corpus-level gate: at least one subset carries motion_source=soma-library (or another
+    entry in CONSTRUCTED_MOTION_SOURCES). CLAUDE.md generated-synthetic condition 3: a Kimodo-
+    only corpus is not the sole distribution for a model deployed on real inputs, so at least
+    one constructed-pose subset must be present before any training run consumes the corpus.
+    """
+    bad = []
+    subsets = [d for d in sorted(root.iterdir())
+               if d.is_dir() and (d / "manifest.json").is_file()]
+    if not subsets:
+        return bad
+    sources = []
+    for d in subsets:
+        try:
+            m = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        ms = m.get("motion_source")
+        sources.append(ms.get("name") if isinstance(ms, dict) else ms)
+    if not any(s in CONSTRUCTED_MOTION_SOURCES for s in sources):
+        bad.append("corpus has %d subset(s) with motion_source names %s but none is in "
+                   "CONSTRUCTED_MOTION_SOURCES (%s). CLAUDE.md generated-synthetic condition "
+                   "3: the corpus must carry at least one constructed-pose subset before any "
+                   "training run consumes it" % (len(sources), sources,
+                                                 tuple(CONSTRUCTED_MOTION_SOURCES)))
+    return bad
+
+
 def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
     import numpy as np
     import pyarrow as pa
@@ -172,6 +218,8 @@ def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
         {"anchor": "kpt_%d" % i, "kind": "body_surface"}
         for i in range(WHOLEBODY133_ANCHOR_COUNT)
     ]
+    manifest["motion_source"] = {"name": "soma-library"}
+    manifest["synthetic_class"] = SYNTHETIC_CLASS_FOR["soma-library"]
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (root / "README.md").write_text("---\nconfigs:\n- config_name: default\n  data_files: '*.parquet'\n---\n", encoding="utf-8")
 
@@ -303,6 +351,53 @@ def self_test() -> int:
         cases.append(("projection_check with unknown kind rejected",
                       check_subset(bad_kind, pth_file), False))
 
+        unknown_ms = root / "unknown_motion_source"
+        unknown_ms.mkdir()
+        _plant_good_shard(unknown_ms, pth_sha)
+        manifest = json.loads((unknown_ms / "manifest.json").read_text(encoding="utf-8"))
+        manifest["motion_source"] = {"name": "not-in-enum"}
+        (unknown_ms / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("motion_source not in enum rejected",
+                      check_subset(unknown_ms, pth_file), False))
+
+        wrong_class = root / "wrong_synthetic_class"
+        wrong_class.mkdir()
+        _plant_good_shard(wrong_class, pth_sha)
+        manifest = json.loads((wrong_class / "manifest.json").read_text(encoding="utf-8"))
+        manifest["motion_source"] = {"name": "kimodo"}
+        manifest["synthetic_class"] = "constructed"
+        (wrong_class / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("kimodo mislabelled as constructed rejected",
+                      check_subset(wrong_class, pth_file), False))
+
+        kimodo_only_root = root / "kimodo_only_corpus"
+        kimodo_only_root.mkdir()
+        for i in range(2):
+            sub = kimodo_only_root / ("subset-%02d-kimodo" % i)
+            sub.mkdir()
+            _plant_good_shard(sub, pth_sha)
+            m = json.loads((sub / "manifest.json").read_text(encoding="utf-8"))
+            m["motion_source"] = {"name": "kimodo"}
+            m["synthetic_class"] = SYNTHETIC_CLASS_FOR["kimodo"]
+            (sub / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+        corpus_bad = check_corpus(kimodo_only_root)
+        cases.append(("corpus of only kimodo subsets rejected (condition 3)",
+                      corpus_bad, False))
+
+        mixed_root = root / "mixed_corpus"
+        mixed_root.mkdir()
+        for i, ms in enumerate(("soma-library", "kimodo")):
+            sub = mixed_root / ("subset-%02d-%s" % (i, ms))
+            sub.mkdir()
+            _plant_good_shard(sub, pth_sha)
+            m = json.loads((sub / "manifest.json").read_text(encoding="utf-8"))
+            m["motion_source"] = {"name": ms}
+            m["synthetic_class"] = SYNTHETIC_CLASS_FOR[ms]
+            (sub / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+        corpus_ok = check_corpus(mixed_root)
+        cases.append(("corpus with one constructed + one generated passes condition 3",
+                      corpus_ok, True))
+
         fails = []
         for label, result, expected_pass in cases:
             passed = len(result) == 0
@@ -319,6 +414,8 @@ def self_test() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--subset", type=pathlib.Path, help="directory holding shards + manifest.json")
+    ap.add_argument("--corpus", type=pathlib.Path,
+                    help="directory holding subset-*/ subdirectories, each with manifest.json")
     ap.add_argument("--anchors-pth", type=pathlib.Path, default=None,
                     help="path to wholebody133.pth on anchors main; hash cross-check skipped if omitted")
     ap.add_argument("--self-test", action="store_true")
@@ -327,10 +424,14 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    if args.subset is None:
-        sys.exit("--subset required unless --self-test")
+    bad = []
+    if args.subset is not None:
+        bad.extend(check_subset(args.subset, args.anchors_pth))
+    if args.corpus is not None:
+        bad.extend(check_corpus(args.corpus))
+    if args.subset is None and args.corpus is None:
+        sys.exit("--subset or --corpus (or --self-test) required")
 
-    bad = check_subset(args.subset, args.anchors_pth)
     for b in bad:
         print("  FAIL  %s" % b)
     print("%d problem(s)" % len(bad))
