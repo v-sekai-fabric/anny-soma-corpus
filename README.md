@@ -78,11 +78,39 @@ compression is not zstd, whose `projection_check` field does not cover all 133 a
 whose accuracy fields carry a number without naming the quantity (`bone_projection_accuracy_max_mm`
 passes; `projection_accuracy_max_mm` fails). Twelve controls total.
 
-## License
+## License and synthetic class (per subset)
 
-Apache-2.0. Renders are constructed synthetic per CLAUDE.md — deterministically rendered
-from ANNY (Apache-2.0, NAVER) posed by Kimodo SOMA output (Apache-2.0 code, NVIDIA Open
-Model checkpoints), with labels regressed from vertex weights
+Apache-2.0. **Synthetic class is stated per subset, not per corpus**, because the two
+motion sources this corpus draws from sit on opposite sides of CLAUDE.md's
+constructed/generated line:
+
+| motion source | synthetic class | manifest `motion_source` |
+| --- | --- | --- |
+| ANNY / SOMA pose library (assets we hold, deterministic) | constructed | `soma-library` |
+| Kimodo (a diffusion sampler) | **constructed renders over generated poses** | `kimodo` |
+
+Renders are constructed either way — the pixels come from Mitsuba rendering ANNY posed
+against `sphere_hammersley_sequence` cameras. But Kimodo is a sampled generative model, so
+a Kimodo-driven subset's poses are generated synthetic and the four conditions in CLAUDE.md
+bind on those subsets:
+
+1. **Generator, checkpoint, and prompt/conditioning recorded** — the manifest's
+   `motion_source` (name, repo, commit) and `sampler_config` (integrator, spp, max_depth,
+   render seed; extended for Kimodo subsets to carry the Kimodo checkpoint hash and the
+   prompt string) satisfy this.
+2. **Stored and manifested separately from constructed and real data** — each subset's own
+   commit set + `motion_source` label satisfies this by construction.
+3. **Not the sole distribution for a model deployed on real inputs.** *Corpus-level
+   invariant:* the corpus must carry at least one constructed-pose subset (`soma-library`
+   or equivalent) before any training run consumes it. `check_corpus_manifest.py` asserts
+   this at the corpus level, not just per-shard.
+4. **Evaluation uses real or constructed data only** — the blinded holdout
+   `coco_person_commercial_val2017` per CLAUDE.md; downstream training reads the manifest's
+   `synthetic_class` per subset and includes generated subsets in gradient steps only.
+
+License upstreams: ANNY (Apache-2.0, NAVER), Kimodo (Apache-2.0 code + NVIDIA Open Model
+weights) — for the Kimodo checkpoint the ID / prompt / conditioning are the per-subset
+provenance condition 1 requires — labels regressed from vertex weights
 ([weftspun/anny-keypoint-anchors](https://github.com/weftspun/anny-keypoint-anchors),
 Apache-2.0 OR MIT, part-derived from NAVER's `coco.pth`).
 
