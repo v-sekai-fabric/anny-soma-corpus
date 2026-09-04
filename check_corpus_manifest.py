@@ -25,12 +25,15 @@ QUANTITY_NOUNS = ("bone", "vertex", "joint", "mesh")
 ACCURACY_KEY_MARKERS = ("accuracy", "verified", "spread")
 REQUIRED_MANIFEST_KEYS = (
     "wholebody133_pth_sha256",
-    "observed_soma_joint_count",
+    "observed_soma_joint_count_raw",
     "motion_source",
     "sampler_config",
     "render_seed",
     "cotenancy_at_kick",
+    "projection_check",
 )
+WHOLEBODY133_ANCHOR_COUNT = 133
+PROJECTION_CHECK_KINDS = ("body_surface", "bone_tracking", "none")
 REQUIRED_ROW_COLUMNS = (
     "image", "camera", "anny_posed_vertices", "keypoints_2d", "soma_pose",
 )
@@ -68,9 +71,25 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
         if key not in manifest:
             bad.append("manifest is missing required key %r" % key)
 
-    if manifest.get("observed_soma_joint_count") not in (SOMA_JOINT_COUNT, 78):
-        bad.append("observed_soma_joint_count is %r, not 77 (or 78 for pre-conversion .npz)"
-                   % manifest.get("observed_soma_joint_count"))
+    if manifest.get("observed_soma_joint_count_raw") not in (SOMA_JOINT_COUNT, 78):
+        bad.append("observed_soma_joint_count_raw is %r, not 77 (or 78 for pre-conversion .npz)"
+                   % manifest.get("observed_soma_joint_count_raw"))
+
+    proj = manifest.get("projection_check")
+    if proj is None:
+        bad.append("manifest is missing projection_check field (RFD 2203 + rule 3: "
+                   "every anchor's projection-verification state is named and counted)")
+    else:
+        entries = proj if isinstance(proj, list) else list(proj.values() if isinstance(proj, dict) else [])
+        if len(entries) != WHOLEBODY133_ANCHOR_COUNT:
+            bad.append("projection_check covers %d anchors, not %d (rule 3: unchecked "
+                       "things are named and counted, never omitted)"
+                       % (len(entries), WHOLEBODY133_ANCHOR_COUNT))
+        for i, e in enumerate(entries):
+            kind = e.get("kind") if isinstance(e, dict) else None
+            if kind not in PROJECTION_CHECK_KINDS:
+                bad.append("projection_check entry %d has kind %r, not one of %s"
+                           % (i, kind, ", ".join(PROJECTION_CHECK_KINDS)))
 
     for key in _walk_keys(manifest):
         low = key.lower()
@@ -148,7 +167,11 @@ def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
                    compression="zstd", row_group_size=100)
     manifest = {k: "seed" for k in REQUIRED_MANIFEST_KEYS}
     manifest["wholebody133_pth_sha256"] = pth_sha
-    manifest["observed_soma_joint_count"] = SOMA_JOINT_COUNT
+    manifest["observed_soma_joint_count_raw"] = SOMA_JOINT_COUNT
+    manifest["projection_check"] = [
+        {"anchor": "kpt_%d" % i, "kind": "body_surface"}
+        for i in range(WHOLEBODY133_ANCHOR_COUNT)
+    ]
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (root / "README.md").write_text("---\nconfigs:\n- config_name: default\n  data_files: '*.parquet'\n---\n", encoding="utf-8")
 
@@ -252,6 +275,33 @@ def self_test() -> int:
         (named_accuracy / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         cases.append(("accuracy field naming the quantity passes",
                       check_subset(named_accuracy, pth_file), True))
+
+        no_proj = root / "no_projection_check"
+        no_proj.mkdir()
+        _plant_good_shard(no_proj, pth_sha)
+        manifest = json.loads((no_proj / "manifest.json").read_text(encoding="utf-8"))
+        del manifest["projection_check"]
+        (no_proj / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("missing projection_check rejected",
+                      check_subset(no_proj, pth_file), False))
+
+        short_proj = root / "short_projection_check"
+        short_proj.mkdir()
+        _plant_good_shard(short_proj, pth_sha)
+        manifest = json.loads((short_proj / "manifest.json").read_text(encoding="utf-8"))
+        manifest["projection_check"] = manifest["projection_check"][:132]
+        (short_proj / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("projection_check covering 132 of 133 rejected",
+                      check_subset(short_proj, pth_file), False))
+
+        bad_kind = root / "bad_kind_projection_check"
+        bad_kind.mkdir()
+        _plant_good_shard(bad_kind, pth_sha)
+        manifest = json.loads((bad_kind / "manifest.json").read_text(encoding="utf-8"))
+        manifest["projection_check"][0]["kind"] = "not_a_kind"
+        (bad_kind / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("projection_check with unknown kind rejected",
+                      check_subset(bad_kind, pth_file), False))
 
         fails = []
         for label, result, expected_pass in cases:
