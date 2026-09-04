@@ -20,6 +20,9 @@ import tempfile
 
 MAKEHUMAN_VERTEX_COUNT = 19158
 SOMA_JOINT_COUNT = 77
+
+QUANTITY_NOUNS = ("bone", "vertex", "joint", "mesh")
+ACCURACY_KEY_MARKERS = ("accuracy", "verified", "spread")
 REQUIRED_MANIFEST_KEYS = (
     "wholebody133_pth_sha256",
     "observed_soma_joint_count",
@@ -36,6 +39,17 @@ REQUIRED_ROW_COLUMNS = (
 def sha256_of(path: pathlib.Path) -> str:
     with open(path, "rb") as fh:
         return hashlib.sha256(fh.read()).hexdigest()
+
+
+def _walk_keys(node, prefix=""):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            path = "%s.%s" % (prefix, k) if prefix else k
+            yield path
+            yield from _walk_keys(v, path)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk_keys(v, "%s[%d]" % (prefix, i))
 
 
 def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list[str]:
@@ -57,6 +71,13 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
     if manifest.get("observed_soma_joint_count") not in (SOMA_JOINT_COUNT, 78):
         bad.append("observed_soma_joint_count is %r, not 77 (or 78 for pre-conversion .npz)"
                    % manifest.get("observed_soma_joint_count"))
+
+    for key in _walk_keys(manifest):
+        low = key.lower()
+        if any(m in low for m in ACCURACY_KEY_MARKERS):
+            if not any(n in low for n in QUANTITY_NOUNS):
+                bad.append("manifest key %r names an accuracy/verified/spread field but no "
+                           "quantity noun (%s)" % (key, ", ".join(QUANTITY_NOUNS)))
 
     if anchors_pth is not None:
         if not anchors_pth.is_file():
@@ -213,6 +234,24 @@ def self_test() -> int:
         (no_configs / "README.md").write_text("# no configs block\n", encoding="utf-8")
         cases.append(("README without configs block rejected",
                       check_subset(no_configs, pth_file), False))
+
+        unnamed_accuracy = root / "unnamed_accuracy"
+        unnamed_accuracy.mkdir()
+        _plant_good_shard(unnamed_accuracy, pth_sha)
+        manifest = json.loads((unnamed_accuracy / "manifest.json").read_text(encoding="utf-8"))
+        manifest["projection_accuracy_max_mm"] = 0.000
+        (unnamed_accuracy / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("unnamed accuracy field rejected (bone vs vertex)",
+                      check_subset(unnamed_accuracy, pth_file), False))
+
+        named_accuracy = root / "named_accuracy"
+        named_accuracy.mkdir()
+        _plant_good_shard(named_accuracy, pth_sha)
+        manifest = json.loads((named_accuracy / "manifest.json").read_text(encoding="utf-8"))
+        manifest["bone_projection_accuracy_max_mm"] = 0.000
+        (named_accuracy / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("accuracy field naming the quantity passes",
+                      check_subset(named_accuracy, pth_file), True))
 
         fails = []
         for label, result, expected_pass in cases:
