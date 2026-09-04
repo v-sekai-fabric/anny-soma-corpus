@@ -1,0 +1,70 @@
+{
+  "$schema_note": "Prompt set for the corpus's `kimodo` motion source per RFD 2203. Each entry is a licence-clean text prompt authored by weftspun (no third-party motion names, no branded exemplars per CLAUDE.md's trademark rule), plus a per-prompt seed and target duration. The renderer's `_run_upstream` reads this file, feeds each prompt to Kimodo at the specified seed and duration, and produces the .npz frames per prompt. Every subset rendered from this source carries `motion_source=kimodo` + `synthetic_class=constructed-renders-over-generated-poses` and CLAUDE.md's four generated-synthetic conditions bind.",
+  "motion_source": {
+    "name": "kimodo",
+    "synthetic_class": "constructed-renders-over-generated-poses",
+    "source_class": "sampled from a generative model",
+    "description": "Kimodo emits (T, 77, 3, 3) local rotation matrices per prompt per seed. Poses are generated synthetic under CLAUDE.md's four conditions; the corpus records generator + checkpoint + prompt + seed per subset in the shard manifest."
+  },
+  "sampler_config_template": {
+    "kimodo_checkpoint": "Kimodo-SOMA-RP-v1.1",
+    "kimodo_checkpoint_sha256": "TODO(HERO at render time)",
+    "sampling_steps": 128,
+    "guidance_scale": 3.5,
+    "temperature": 1.0,
+    "target_fps": 30,
+    "notes": "sampler_config recorded per shard as manifest.sampler_config.kimodo (a sub-object under the existing sampler_config with the Mitsuba knobs). Any refinement subset that swaps the checkpoint or changes the sampler knobs is a new commit set with prior hash cited, per RFD 2203 living-dataset doctrine."
+  },
+  "prompts": {
+    "$note": "Categorised so a subset can subselect (e.g. subset-01 uses only 'locomotion' + 'transitions'; subset-02 adds 'gestures'). Category is recorded in the shard's manifest under motion_source.categories.",
+    "locomotion": [
+      {"id": "walk-forward-neutral", "prompt": "A person walking forward at a natural pace on flat ground, arms swinging naturally", "seed": 20260904001, "duration_s": 3.0},
+      {"id": "walk-forward-brisk", "prompt": "A person walking briskly forward on flat ground, longer stride, arms swinging widely", "seed": 20260904002, "duration_s": 2.5},
+      {"id": "walk-turn-left", "prompt": "A person walking forward and turning left through a gentle curve", "seed": 20260904003, "duration_s": 3.5},
+      {"id": "walk-turn-right", "prompt": "A person walking forward and turning right through a gentle curve", "seed": 20260904004, "duration_s": 3.5},
+      {"id": "walk-stop", "prompt": "A person walking forward, then decelerating to a stop and standing still", "seed": 20260904005, "duration_s": 3.0},
+      {"id": "walk-backward", "prompt": "A person walking backward at a slow pace, arms held out slightly for balance", "seed": 20260904006, "duration_s": 3.0},
+      {"id": "walk-sideways-left", "prompt": "A person side-stepping to their own left, feet crossing over", "seed": 20260904007, "duration_s": 3.0},
+      {"id": "walk-sideways-right", "prompt": "A person side-stepping to their own right, feet crossing over", "seed": 20260904008, "duration_s": 3.0},
+      {"id": "jog-forward", "prompt": "A person jogging forward at a steady pace, arms bent at the elbow, feet slightly off the ground", "seed": 20260904009, "duration_s": 2.5},
+      {"id": "run-forward", "prompt": "A person running forward, arms pumping, longer time in the air between footfalls", "seed": 20260904010, "duration_s": 2.0}
+    ],
+    "transitions": [
+      {"id": "stand-to-crouch", "prompt": "A person standing upright, then bending at the knees and hips to crouch down low, arms coming forward for balance", "seed": 20260904101, "duration_s": 2.5},
+      {"id": "crouch-to-stand", "prompt": "A person crouching low, then straightening the legs and rising to a standing pose, arms falling to the sides", "seed": 20260904102, "duration_s": 2.5},
+      {"id": "stand-to-sit-floor", "prompt": "A person standing, then lowering themselves to sit cross-legged on the floor", "seed": 20260904103, "duration_s": 3.5},
+      {"id": "sit-floor-to-stand", "prompt": "A person sitting cross-legged on the floor, then rising to a standing pose using one hand for balance", "seed": 20260904104, "duration_s": 3.5},
+      {"id": "stand-to-sit-chair", "prompt": "A person standing, then bending at the knees and hips to sit down on an imagined chair behind them", "seed": 20260904105, "duration_s": 2.5},
+      {"id": "sit-chair-to-stand", "prompt": "A person sitting on an imagined chair, then rising to a standing pose", "seed": 20260904106, "duration_s": 2.5},
+      {"id": "kneel-down", "prompt": "A person standing, then kneeling down onto both knees, torso upright", "seed": 20260904107, "duration_s": 2.5},
+      {"id": "kneel-to-stand", "prompt": "A person kneeling on both knees, then rising to a standing pose one leg at a time", "seed": 20260904108, "duration_s": 3.0}
+    ],
+    "gestures": [
+      {"id": "wave-right-hand", "prompt": "A person standing still, raising their own right arm and waving the hand side to side above shoulder height", "seed": 20260904201, "duration_s": 2.0},
+      {"id": "wave-left-hand", "prompt": "A person standing still, raising their own left arm and waving the hand side to side above shoulder height", "seed": 20260904202, "duration_s": 2.0},
+      {"id": "point-forward-right", "prompt": "A person standing still, extending their own right arm straight forward with the index finger pointing", "seed": 20260904203, "duration_s": 1.5},
+      {"id": "thumbs-up-right", "prompt": "A person standing still, raising their own right fist to chest height and extending the thumb up", "seed": 20260904204, "duration_s": 1.5},
+      {"id": "nod-head", "prompt": "A person standing still, nodding the head down and up twice, torso still", "seed": 20260904205, "duration_s": 2.0},
+      {"id": "shake-head", "prompt": "A person standing still, turning the head side to side twice, torso still", "seed": 20260904206, "duration_s": 2.0},
+      {"id": "shrug-shoulders", "prompt": "A person standing still, raising both shoulders toward the ears then lowering them, palms turning outward", "seed": 20260904207, "duration_s": 1.5},
+      {"id": "cross-arms", "prompt": "A person standing still, crossing both arms in front of the chest, forearms overlapping", "seed": 20260904208, "duration_s": 2.0}
+    ],
+    "idle": [
+      {"id": "stand-idle-relaxed", "prompt": "A person standing still with arms hanging naturally at the sides, weight even on both feet, gentle breathing", "seed": 20260904301, "duration_s": 4.0},
+      {"id": "stand-idle-weight-shift", "prompt": "A person standing, gently shifting weight from one foot to the other, arms hanging naturally", "seed": 20260904302, "duration_s": 4.0},
+      {"id": "stand-look-around", "prompt": "A person standing still, turning the head left, then right, then centre, torso upright", "seed": 20260904303, "duration_s": 3.5}
+    ]
+  },
+  "provenance": {
+    "condition_1_generator": "Kimodo-SOMA-RP-v1.1 checkpoint (NVIDIA Open Model License) invoked at the per-prompt seed above; each shard's manifest records the checkpoint hash + the prompt text + the seed under sampler_config.kimodo",
+    "condition_2_stored_separately": "this file names motion_source=kimodo; the shard manifest's motion_source field records it, distinct from any soma-library subset per RFD 2203 living-dataset doctrine",
+    "condition_3_not_sole_distribution": "the corpus MUST also carry at least one soma-library (constructed-pose) subset before any training run consumes it. `check_corpus_manifest.py` asserts this at corpus level (task 3 gate extension)",
+    "condition_4_evaluation_on_real_or_constructed": "blinded holdout coco_person_commercial_val2017 remains the evaluation set per CLAUDE.md; kimodo subsets are training-only"
+  },
+  "authoring": {
+    "prompts_authored_by": "K. S. Ernest (iFire) Lee (github.com/fire)",
+    "authored": "2026-09-04",
+    "task": "HERD 2026-09-04 task 2: author the Kimodo prompt set as data, licence-clean, trademark-safe vocabulary, no third-party motion names",
+    "notes": "Prompts are original text authored for this corpus. No branded exemplars per CLAUDE.md trademark rule (no franchise-named moves, no third-party dance names, no branded fighting-game motions). Reference vocabulary is anatomical (joint names, weight-shift language) rather than referential."
+  }
+}
