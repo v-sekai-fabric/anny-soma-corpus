@@ -252,7 +252,7 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
                    sampler_config: dict, split_config: dict, seed: int,
                    cotenancy_dump: dict, verify_result: dict,
                    projection_check: dict,
-                   keypoints_2d_face_status: str = "v2-axis-bug"):
+                   keypoints_2d_face_status: str = "v3-axis-corrected"):
     """Per-shard manifest with the fields RFD 2203 requires.
 
     R5: motion_source is an object with `{repo, commit, categories, npz_count}`
@@ -279,16 +279,17 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
         "cotenancy_at_kick": cotenancy_dump,
         "verify_result": verify_result,
         # Rule-3 completeness: every one of the 133 anchors named + counted.
-        # Six fingertips at kind=bone_tracking, face landmarks at kind=none
-        # pending anchors-v3, hips + others at kind=body_surface.
+        # Six fingertips at kind=bone_tracking, 2 hips at kind=body_surface
+        # with checked_mass_pct notes, other 125 at kind=body_surface (v3
+        # anchors closed face_axis_bug: all 68 face anchors pass mass
+        # check under wholebody133.pth SHA 5eb5e244…).
         "projection_check": projection_check,
-        # Face-region labels regress to axis-buggy positions in v2 pth
-        # (per ANCHOR's 2026-09-04 finding: jawline landmarks all at chin
-        # height, eye/mouth landmarks X-compressed ~50% toward midline;
-        # +Y treated as up when ANNY is +Z up). Downstream training must
-        # not treat face-region keypoints_2d as iBUG-shaped until v3
-        # lands. Vertices in the row are label-neutral and re-bake
-        # cleanly under a new pth SHA.
+        # Under v2 anchors this was "v2-axis-bug" (jawline at chin height,
+        # eye/mouth X-compressed ~50%; face_anchors.py assumed +Y up but
+        # ANNY is +Z up). Anchors-v3 (SHA 5eb5e244…) corrected the axis
+        # + closed the interior-mouth-vert leak; face anchors now
+        # geographically-correct within 6mm median / 12mm worst-cap.
+        # Refinement subsets can carry other values as new labels land.
         "keypoints_2d_face_status": keypoints_2d_face_status,
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
@@ -466,11 +467,14 @@ def main() -> int:
         anchor: {"reference_bone": bone, "rest_offset_mm": 6.5, "variation_across_poses_mm": 0.0}
         for anchor, bone in fingertip_bone_map.items()
     }
-    # Face 68: face_kpt_0..face_kpt_67
-    unverified_reasons = {
-        f"face_kpt_{i}": {"kind": "none", "reason": "pending_anchors_v3_face_axis_bug"}
-        for i in range(68)
-    }
+    # anchors-v3 (wholebody133.pth SHA 5eb5e244…, merged 2026-09-04)
+    # closed the face_axis_bug: all 68 face anchors now clear the 1%
+    # excluded-mass threshold and take kind=body_surface. Only the 8
+    # exceptions remain: 6 fingertips (kind=bone_tracking, above) and
+    # 2 hips (kind=body_surface with checked_mass_pct note). Ship
+    # against v3 from the start per HERD's directive; no v2-flag
+    # subset needed.
+    unverified_reasons = {}
     unverified_reasons["left_hip"] = {
         "kind": "body_surface", "checked_mass_pct": 95.5,
         "note": "small overspill onto interior verts; upstream NAVER anchor",
@@ -494,7 +498,7 @@ def main() -> int:
         cotenancy_dump=dump,
         verify_result=verify_result_agg or {"passed": False, "reason": "no motions processed"},
         projection_check=projection_check,
-        keypoints_2d_face_status="v2-axis-bug",
+        keypoints_2d_face_status="v3-axis-corrected",
     )
     print(f"wrote train={len(train_rows)} val={len(val_rows)} rows to {out_dir}")
     print(f"manifest at {out_dir / 'manifest.json'}")
