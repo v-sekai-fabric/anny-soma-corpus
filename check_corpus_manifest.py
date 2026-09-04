@@ -40,6 +40,11 @@ SYNTHETIC_CLASS_FOR = {
     "anny-tpose-sweep": "constructed",
     "kimodo": "constructed-renders-over-generated-poses",
 }
+# Rule-3 fields on every subset manifest. `hand-picked` and `none` are legal explicit
+# values until an anatomy-based joint envelope and RFD 0007's per-pose validator exist;
+# what the gate forbids is silence about them (a missing field reads exactly like a pass).
+SWEEP_RANGES_VALUES = ("hand-picked", "anatomy-rom-envelope")
+POSE_VALIDATION_VALUES = ("none", "rfd_0007")
 REQUIRED_ROW_COLUMNS = (
     "image", "camera", "anny_posed_vertices", "keypoints_2d", "soma_pose",
 )
@@ -115,6 +120,15 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
         if sc != expected:
             bad.append("synthetic_class %r for motion_source %r must be %r "
                        "(CLAUDE.md constructed vs generated)" % (sc, ms_name, expected))
+
+    if manifest.get("sweep_ranges") not in SWEEP_RANGES_VALUES:
+        bad.append("sweep_ranges %r not in %s. Rule 3: unchecked things are named and "
+                   "counted, never omitted; hand-picked is a legal value until an anatomy "
+                   "envelope lands" % (manifest.get("sweep_ranges"), SWEEP_RANGES_VALUES))
+    if manifest.get("pose_validation") not in POSE_VALIDATION_VALUES:
+        bad.append("pose_validation %r not in %s. Rule 3: none is a legal value until "
+                   "RFD 0007's gate exists" % (manifest.get("pose_validation"),
+                                               POSE_VALIDATION_VALUES))
 
     if anchors_pth is not None:
         if not anchors_pth.is_file():
@@ -220,6 +234,8 @@ def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
     ]
     manifest["motion_source"] = {"name": "anny-tpose-sweep"}
     manifest["synthetic_class"] = SYNTHETIC_CLASS_FOR["anny-tpose-sweep"]
+    manifest["sweep_ranges"] = "hand-picked"
+    manifest["pose_validation"] = "none"
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (root / "README.md").write_text("---\nconfigs:\n- config_name: default\n  data_files: '*.parquet'\n---\n", encoding="utf-8")
 
@@ -383,6 +399,24 @@ def self_test() -> int:
         corpus_bad = check_corpus(kimodo_only_root)
         cases.append(("corpus of only kimodo subsets rejected (condition 3)",
                       corpus_bad, False))
+
+        missing_sweep = root / "missing_sweep_ranges"
+        missing_sweep.mkdir()
+        _plant_good_shard(missing_sweep, pth_sha)
+        m = json.loads((missing_sweep / "manifest.json").read_text(encoding="utf-8"))
+        del m["sweep_ranges"]
+        (missing_sweep / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+        cases.append(("missing sweep_ranges rejected (rule 3)",
+                      check_subset(missing_sweep, pth_file), False))
+
+        missing_val = root / "missing_pose_validation"
+        missing_val.mkdir()
+        _plant_good_shard(missing_val, pth_sha)
+        m = json.loads((missing_val / "manifest.json").read_text(encoding="utf-8"))
+        del m["pose_validation"]
+        (missing_val / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
+        cases.append(("missing pose_validation rejected (rule 3)",
+                      check_subset(missing_val, pth_file), False))
 
         mixed_root = root / "mixed_corpus"
         mixed_root.mkdir()
