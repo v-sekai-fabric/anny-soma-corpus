@@ -1,0 +1,252 @@
+"""Gate the anny-soma-corpus render output against RFD 2203.
+
+Every rule below is stated in RFD 2203 (`rfd/2203-anny-soma-first-subset-corpus-shape/`
+in the manuals repo); this script is the machine-checked companion so a document rule
+and a gate cannot drift. Self-test carries a negative control per rule, so a gate that
+passes on known-broken input surfaces its own defect rather than certifying it.
+
+    python check_corpus_manifest.py --subset <path>              gate one subset
+    python check_corpus_manifest.py --self-test                  plant + reject 6 controls
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import pathlib
+import sys
+import tempfile
+
+MAKEHUMAN_VERTEX_COUNT = 19158
+SOMA_JOINT_COUNT = 77
+REQUIRED_MANIFEST_KEYS = (
+    "wholebody133_pth_sha256",
+    "observed_soma_joint_count",
+    "motion_source",
+    "sampler_config",
+    "render_seed",
+    "cotenancy_at_kick",
+)
+REQUIRED_ROW_COLUMNS = (
+    "image", "camera", "anny_posed_vertices", "keypoints_2d", "soma_pose",
+)
+
+
+def sha256_of(path: pathlib.Path) -> str:
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list[str]:
+    """Return a list of failure messages; empty list is a pass."""
+    bad = []
+
+    manifest_path = subset / "manifest.json"
+    if not manifest_path.is_file():
+        return ["no manifest.json at %s" % manifest_path]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return ["manifest.json is not valid JSON: %s" % e]
+
+    for key in REQUIRED_MANIFEST_KEYS:
+        if key not in manifest:
+            bad.append("manifest is missing required key %r" % key)
+
+    if manifest.get("observed_soma_joint_count") not in (SOMA_JOINT_COUNT, 78):
+        bad.append("observed_soma_joint_count is %r, not 77 (or 78 for pre-conversion .npz)"
+                   % manifest.get("observed_soma_joint_count"))
+
+    if anchors_pth is not None:
+        if not anchors_pth.is_file():
+            bad.append("--anchors-pth %s does not exist" % anchors_pth)
+        else:
+            expected = sha256_of(anchors_pth)
+            got = manifest.get("wholebody133_pth_sha256")
+            if got != expected:
+                bad.append("wholebody133_pth_sha256 %s does not match anchors main %s"
+                           % (got, expected))
+
+    shards = sorted(subset.glob("*.parquet"))
+    if not shards:
+        bad.append("no *.parquet shards under %s" % subset)
+        return bad
+
+    import pyarrow.parquet as pq
+
+    for shard in shards:
+        pf = pq.ParquetFile(shard)
+        schema = pf.schema_arrow
+        for col in REQUIRED_ROW_COLUMNS:
+            if col not in schema.names:
+                bad.append("%s missing column %r" % (shard.name, col))
+
+        codecs = {pf.metadata.row_group(g).column(c).compression
+                  for g in range(pf.num_row_groups)
+                  for c in range(pf.metadata.num_columns)}
+        if not codecs.issubset({"ZSTD"}):
+            bad.append("%s uses codecs %s; RFD 2196 requires zstd" % (shard.name, codecs))
+
+        if "anny_posed_vertices" in schema.names:
+            first = pf.read_row_group(0, columns=["anny_posed_vertices"]).column(0)
+            for row in first.to_pylist()[:1]:
+                if row is None or len(row) != MAKEHUMAN_VERTEX_COUNT:
+                    bad.append("%s anny_posed_vertices has length %s, not %d"
+                               % (shard.name, "None" if row is None else len(row),
+                                  MAKEHUMAN_VERTEX_COUNT))
+        if "soma_pose" in schema.names:
+            first = pf.read_row_group(0, columns=["soma_pose"]).column(0)
+            for row in first.to_pylist()[:1]:
+                if row is None or len(row) != SOMA_JOINT_COUNT:
+                    bad.append("%s soma_pose has length %s, not %d"
+                               % (shard.name, "None" if row is None else len(row),
+                                  SOMA_JOINT_COUNT))
+
+    readme = subset / "README.md"
+    if readme.is_file():
+        text = readme.read_text(encoding="utf-8")
+        if "configs:" not in text and "config_name:" not in text:
+            bad.append("README.md is missing a HF-viewer configs: block")
+    return bad
+
+
+def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    rows = [{
+        "image": {"bytes": b"\x89PNG", "path": "f0000_v0.png"},
+        "camera": np.eye(4, dtype=np.float32).tolist(),
+        "anny_posed_vertices": np.zeros((MAKEHUMAN_VERTEX_COUNT, 3), dtype=np.float32).tolist(),
+        "keypoints_2d": np.zeros((133, 3), dtype=np.float32).tolist(),
+        "soma_pose": np.zeros((SOMA_JOINT_COUNT, 3), dtype=np.float32).tolist(),
+    }]
+    pq.write_table(pa.Table.from_pylist(rows), root / "shard_00.parquet",
+                   compression="zstd", row_group_size=100)
+    manifest = {k: "seed" for k in REQUIRED_MANIFEST_KEYS}
+    manifest["wholebody133_pth_sha256"] = pth_sha
+    manifest["observed_soma_joint_count"] = SOMA_JOINT_COUNT
+    (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (root / "README.md").write_text("---\nconfigs:\n- config_name: default\n  data_files: '*.parquet'\n---\n", encoding="utf-8")
+
+
+def self_test() -> int:
+    """Plant a passing subset, then break one rule at a time and assert the gate rejects."""
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+
+        pth_file = root / "wholebody133.pth"
+        pth_file.write_bytes(b"stub-pth-content-for-self-test")
+        pth_sha = sha256_of(pth_file)
+
+        good = root / "good"
+        good.mkdir()
+        _plant_good_shard(good, pth_sha)
+
+        cases = []
+        cases.append(("positive control passes", check_subset(good, pth_file), True))
+
+        wrong_verts = root / "wrong_verts"
+        wrong_verts.mkdir()
+        _plant_good_shard(wrong_verts, pth_sha)
+        rows = [{
+            "image": {"bytes": b"", "path": "x"},
+            "camera": np.eye(4, dtype=np.float32).tolist(),
+            "anny_posed_vertices": np.zeros((18056, 3), dtype=np.float32).tolist(),
+            "keypoints_2d": np.zeros((133, 3), dtype=np.float32).tolist(),
+            "soma_pose": np.zeros((SOMA_JOINT_COUNT, 3), dtype=np.float32).tolist(),
+        }]
+        pq.write_table(pa.Table.from_pylist(rows), wrong_verts / "shard_00.parquet",
+                       compression="zstd", row_group_size=100)
+        cases.append(("18,056-vertex shard rejected", check_subset(wrong_verts, pth_file), False))
+
+        missing = root / "missing_col"
+        missing.mkdir()
+        _plant_good_shard(missing, pth_sha)
+        manifest = json.loads((missing / "manifest.json").read_text(encoding="utf-8"))
+        del manifest["motion_source"]
+        (missing / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("missing manifest column rejected", check_subset(missing, pth_file), False))
+
+        stale = root / "stale_hash"
+        stale.mkdir()
+        _plant_good_shard(stale, "0" * 64)
+        cases.append(("stale pth hash rejected", check_subset(stale, pth_file), False))
+
+        wrong_j = root / "wrong_j"
+        wrong_j.mkdir()
+        _plant_good_shard(wrong_j, pth_sha)
+        rows_j = [{
+            "image": {"bytes": b"", "path": "x"},
+            "camera": np.eye(4, dtype=np.float32).tolist(),
+            "anny_posed_vertices": np.zeros((MAKEHUMAN_VERTEX_COUNT, 3), dtype=np.float32).tolist(),
+            "keypoints_2d": np.zeros((133, 3), dtype=np.float32).tolist(),
+            "soma_pose": np.zeros((66, 3), dtype=np.float32).tolist(),
+        }]
+        pq.write_table(pa.Table.from_pylist(rows_j), wrong_j / "shard_00.parquet",
+                       compression="zstd", row_group_size=100)
+        cases.append(("66-joint soma_pose rejected", check_subset(wrong_j, pth_file), False))
+
+        uncomp = root / "uncompressed"
+        uncomp.mkdir()
+        _plant_good_shard(uncomp, pth_sha)
+        rows_u = [{
+            "image": {"bytes": b"", "path": "x"},
+            "camera": np.eye(4, dtype=np.float32).tolist(),
+            "anny_posed_vertices": np.zeros((MAKEHUMAN_VERTEX_COUNT, 3), dtype=np.float32).tolist(),
+            "keypoints_2d": np.zeros((133, 3), dtype=np.float32).tolist(),
+            "soma_pose": np.zeros((SOMA_JOINT_COUNT, 3), dtype=np.float32).tolist(),
+        }]
+        pq.write_table(pa.Table.from_pylist(rows_u), uncomp / "shard_00.parquet",
+                       compression="snappy", row_group_size=100)
+        cases.append(("non-zstd compression rejected", check_subset(uncomp, pth_file), False))
+
+        no_configs = root / "no_configs"
+        no_configs.mkdir()
+        _plant_good_shard(no_configs, pth_sha)
+        (no_configs / "README.md").write_text("# no configs block\n", encoding="utf-8")
+        cases.append(("README without configs block rejected",
+                      check_subset(no_configs, pth_file), False))
+
+        fails = []
+        for label, result, expected_pass in cases:
+            passed = len(result) == 0
+            if passed == expected_pass:
+                print("  ok  %s" % label)
+            else:
+                fails.append(label)
+                print("  BAD %s: %s" % (label, result if result else "unexpectedly passed"))
+
+        print("\n%d failed" % len(fails))
+        return 1 if fails else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--subset", type=pathlib.Path, help="directory holding shards + manifest.json")
+    ap.add_argument("--anchors-pth", type=pathlib.Path, default=None,
+                    help="path to wholebody133.pth on anchors main; hash cross-check skipped if omitted")
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args()
+
+    if args.self_test:
+        return self_test()
+
+    if args.subset is None:
+        sys.exit("--subset required unless --self-test")
+
+    bad = check_subset(args.subset, args.anchors_pth)
+    for b in bad:
+        print("  FAIL  %s" % b)
+    print("%d problem(s)" % len(bad))
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
