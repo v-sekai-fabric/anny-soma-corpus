@@ -1,6 +1,33 @@
+---
+license: apache-2.0
+tags:
+  - keypoints
+  - motion
+  - anny
+  - soma
+  - kimodo
+  - rfd-1173
+  - rfd-2203
+configs:
+  # HERO fills one config_name per rendered subset at publish time. The subset directory
+  # naming convention is <subset-index>-<motion-source-summary>-<n-views>view (e.g.
+  # subset-01-walks-crouches-getups-8view/*.parquet), and each subset ships as its own
+  # commit set per RFD 2203's living-dataset doctrine. Two configs per subset — one
+  # `train.parquet` and one `val.parquet` per the split_config field in the shard's
+  # manifest — so the HF viewer surfaces the split shape without additional URL routing.
+  # A subset shipped without a matching config_name entry renders as nothing per RFD 2196
+  # rule 5 (the subdirectory prefix is what makes the viewer render).
+  - config_name: subset-01-train
+    data_files: "subset-01-*/train.parquet"
+  - config_name: subset-01-val
+    data_files: "subset-01-*/val.parquet"
+---
+
 # anny-soma-corpus
 
-The ANNY-SOMA keypoint corpus. Task #67 render side of the RFD 1173 keypoints stub. Living dataset: first subset lands, motions can be refined in place, new subsets add on top, each subset a separate commit set with the prior hash cited.
+The ANNY-SOMA keypoint corpus. Task #67 render side of the RFD 1173 keypoints stub. Living
+dataset: first subset lands, motions can be refined in place, new subsets add on top, each
+subset a separate commit set with the prior hash cited.
 
 ## Row shape
 
@@ -14,16 +41,62 @@ Hybrid per [RFD 2203](https://github.com/weftspun/request-for-discussion/tree/ma
 | `keypoints_2d` | `float32[133, 3]` | `(x, y, visible)` baked at the `.pth` hash |
 | `soma_pose` | `float32[77, 3]` | axis-angle rotvecs as Kimodo emits |
 
-Per-shard manifest carries `wholebody133.pth` SHA-256, observed SOMA joint count, motion source, sampler config, render seed.
+Per-shard manifest carries `wholebody133.pth` SHA-256, observed SOMA joint count, motion
+source, sampler configuration, render seed, and the co-tenancy dump at kick. Training
+consumers regress fresh 2D keypoints from `anny_posed_vertices` via
+`KeypointsRegressor.load_precomputed(wholebody133.pth)` when they want the latest anchors,
+or use the baked `keypoints_2d` column as the immutable comparison baseline. The dataset
+viewer shows the baked column.
+
+## Subsets
+
+Each subset directory follows `subset-<index>-<motion-source-summary>-<n-views>view/`, and
+contains `train.parquet`, `val.parquet`, and `manifest.json`. The `configs:` block above
+routes the HF viewer at each subset's shards; a shard without a matching `config_name`
+entry does not surface.
+
+The living-dataset shape means the corpus grows in two ways:
+
+- **Additive subsets** add new motion sources, camera policies, lighting conditions,
+  blendshape sweeps, or environmental context. Each is its own commit set.
+- **Motion refinements** re-render an earlier motion source with better sampler
+  configuration; the refined shards ship as a new commit set with the prior shard's hash
+  cited in the manifest as retraction-in-place.
+
+Each subset's manifest records what it was rendered against, so a training run that spans
+subsets can cite the exact snapshot per RFD 2203.
 
 ## Publish path
 
-`hf upload-large-folder` for per-file resumable commits. `HF_HUB_DISABLE_XET=1 HF_HUB_ENABLE_HF_TRANSFER=1` per RFD 2196 rule 5.
+`hf upload-large-folder` for per-file resumable commits. `HF_HUB_DISABLE_XET=1
+HF_HUB_ENABLE_HF_TRANSFER=1` per RFD 2196 rule 5.
+
+Every subset is verified against `check_corpus_manifest.py --self-test` before publish. The
+gate rejects a shard whose `anny_posed_vertices` column is not `(19158, 3)`, whose
+`soma_pose` column is not `(77, 3)`, whose manifest is missing any required key, whose
+compression is not zstd, whose `projection_check` field does not cover all 133 anchors, or
+whose accuracy fields carry a number without naming the quantity (`bone_projection_accuracy_max_mm`
+passes; `projection_accuracy_max_mm` fails). Twelve controls total.
 
 ## License
 
-Apache-2.0. Renders are constructed from ANNY (Apache-2.0, NAVER) posed by Kimodo SOMA output (Apache-2.0 code, NVIDIA Open Model checkpoints).
+Apache-2.0. Renders are constructed synthetic per CLAUDE.md — deterministically rendered
+from ANNY (Apache-2.0, NAVER) posed by Kimodo SOMA output (Apache-2.0 code, NVIDIA Open
+Model checkpoints), with labels regressed from vertex weights
+([weftspun/anny-keypoint-anchors](https://github.com/weftspun/anny-keypoint-anchors),
+Apache-2.0 OR MIT, part-derived from NAVER's `coco.pth`).
+
+## Citation
+
+See `CITATION.cff` at the repository root. Every upstream this dataset consumed is a
+separate `references:` entry with its license recorded honestly — inclusion decision is
+"did the dataset use it", not "does its license require a credit".
 
 ## Related
 
-RFD 2203 · RFD 2196 · RFD 1173 · `weftspun/anny-keypoint-anchors` (source of `wholebody133.pth`) · `weftspun/interactor-kimodo-text-to-motion` (source of SOMA output)
+RFD 2203 (row shape decision) · RFD 2196 (HF publishing rules) · RFD 1173 (multimodal
+pipeline; parent) ·
+[weftspun/anny-keypoint-anchors](https://github.com/weftspun/anny-keypoint-anchors)
+(source of `wholebody133.pth`) ·
+[weftspun/interactor-kimodo-text-to-motion](https://github.com/weftspun/interactor-kimodo-text-to-motion)
+(source of SOMA motion output)

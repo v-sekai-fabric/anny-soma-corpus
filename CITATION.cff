@@ -1,29 +1,30 @@
 cff-version: 1.2.0
-message: "If you use this corpus, please cite:"
 title: "anny-soma-corpus: ANNY-SOMA keypoint corpus for RFD 1173"
-type: dataset
+message: >-
+  If you use this dataset, please cite it and the upstream sources
+  listed under `references`.
 authors:
-  - name: "Weftspun (HERO session)"
-license: apache-2.0
+  - family-names: Lee
+    given-names: "K. S. Ernest (iFire)"
+    alias: fire
+    website: https://github.com/fire
+license: Apache-2.0
+license-url: https://apache.org/licenses/LICENSE-2.0
+type: dataset
+version: RFD-2203
 date-released: "2026-09-04"
-url: "https://github.com/weftspun/anny-soma-corpus"
-references:
-  - type: software
-    title: "anny"
-    authors:
-      - name: "NAVER"
-    repository-code: "https://github.com/naver/anny"
-    license: "Apache-2.0"
-  - type: software
-    title: "kimodo"
-    authors:
-      - name: "NVIDIA"
-    repository-code: "https://github.com/nv-tlabs/kimodo"
-    license: "Apache-2.0"
-    notes: "Kimodo-SOMA-RP-v1.1 checkpoint under NVIDIA Open Model License."
-  - type: generic
-    title: "RFD 2203: first-subset row shape for the ANNY-SOMA keypoint corpus"
-    notes: "Row shape and publish path are decided here."
+url: https://huggingface.co/datasets/chibifire/anny-soma-corpus
+repository-code: https://github.com/weftspun/anny-soma-corpus
+identifiers:
+  - type: other
+    value: urn:oid:1.3.6.1.4.1.66606.1.2.2203
+    description: RFD 2203 (first-subset row shape for the ANNY-SOMA keypoint corpus)
+  - type: other
+    value: urn:oid:1.3.6.1.4.1.66606.1.2.1173
+    description: RFD 1173 (a multimodal diffusion pipeline; parent RFD)
+  - type: other
+    value: urn:oid:1.3.6.1.4.1.66606.1.2.2196
+    description: RFD 2196 (HuggingFace dataset viewer rules)
 keywords:
   - keypoints
   - motion
@@ -32,3 +33,72 @@ keywords:
   - kimodo
   - rfd-1173
   - rfd-2203
+references:
+  # ANNY -- Apache-2.0 (courtesy citation; the mesh, rig, and blendshape targets this corpus poses)
+  - type: software
+    title: "anny"
+    authors:
+      - name: "NAVER Corp."
+    repository-code: https://github.com/naver/anny
+    license: Apache-2.0
+    notes: >-
+      Mesh (makehuman 19,158-vertex topology via TopologyConfig
+      base_mesh="makehuman", remove_unattached_vertices=False), SOMA
+      rig, and the 52 facial-action blendshape targets under
+      data/faceunits01/targets/faceunits/. wholebody133.pth is
+      indexed against this mesh.
+  # Kimodo -- Apache-2.0 code + NVIDIA Open Model License weights (courtesy citation; the motion source)
+  - type: software
+    title: "kimodo"
+    authors:
+      - name: "NVIDIA"
+    repository-code: https://github.com/nv-tlabs/kimodo
+    license: Apache-2.0
+    notes: >-
+      Kimodo-SOMA-* checkpoints under NVIDIA Open Model License.
+      Kimodo emits (T, 77, 3, 3) local rotation matrices which are
+      converted to axis-angle rotvecs; anny prepends one root identity
+      at call time to reach 78 pose parameters (task #76 for the
+      disambiguation of 77-vs-78 across RFDs 1102/1173/2162).
+  # Pixal3D -- Apache-2.0 (courtesy citation; the view-schedule origin)
+  - type: software
+    title: "pixal3d"
+    repository-code: https://github.com/weftspun/pixal3d-upstream
+    license: Apache-2.0
+    notes: >-
+      Vetted Z-up port of the sphere_hammersley_sequence camera
+      schedule at pixal3d/utils/random_utils.py:22, imported via
+      6-datasource/anny-render-corpus. Camera policy per CLAUDE.md
+      convention "Views come from the sphere_hammersley_sequence
+      camera sequence".
+  # wholebody133 anchors -- Apache-2.0 (courtesy citation; the anchor source, part-derived from NAVER's coco.pth)
+  - type: software
+    title: "anny-keypoint-anchors"
+    authors:
+      - family-names: Lee
+        given-names: "K. S. Ernest (iFire)"
+    repository-code: https://github.com/weftspun/anny-keypoint-anchors
+    license: Apache-2.0 OR MIT
+    notes: >-
+      The 133 COCO-WholeBody keypoint anchors as vertex weights over
+      ANNY's 19,158-vertex makehuman mesh. Body 17 + feet 6 imported
+      from NAVER's coco.pth verbatim; hands 42 built from ANNY's own
+      skinning weights; face 68 (v3) built from per-target top-decile
+      motion filter over the 52 facial-action blendshapes, filtered
+      against SOMA_wrap's excluded-vertex set. Each subset's manifest
+      records which SHA of wholebody133.pth it was baked against.
+  # RFD 2203 -- the row shape decision
+  - type: generic
+    title: "RFD 2203: The first-subset row shape for the anny-soma keypoint corpus"
+    url: https://github.com/weftspun/request-for-discussion/tree/main/rfd/2203-anny-soma-first-subset-corpus-shape
+    notes: Row shape and publish path are decided here.
+  # RFD 1173 -- the parent pipeline this feeds
+  - type: generic
+    title: "RFD 1173: A multimodal diffusion pipeline"
+    url: https://github.com/weftspun/request-for-discussion/tree/main/rfd/1173-a-multimodal-diffusion-pipeline
+    notes: This corpus feeds the RFD 1173 keypoints stub.
+  # RFD 2196 -- the HF publishing rules
+  - type: generic
+    title: "RFD 2196: HuggingFace dataset viewer rules"
+    url: https://github.com/weftspun/request-for-discussion/tree/main/rfd/2196-huggingface-dataset-viewer-rules
+    notes: Publish path (LFS + hf_transfer, xet disabled, hf upload-large-folder) per rule 5.
