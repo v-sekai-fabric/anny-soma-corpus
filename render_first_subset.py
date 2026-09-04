@@ -124,17 +124,57 @@ def hammersley_cameras(n_views: int) -> list:
     return [{"view_index": i, "extrinsics": None, "intrinsics": None} for i in range(n_views)]
 
 
-def pose_anny_batched(anny_model, kimodo_npz_path: Path, device: str):
-    """Load Kimodo output, apply anny per frame, return posed vertices
-    + bone poses + soma_pose per frame. Rotvec conversion + root
-    prepend copied from `interactor-kimodo-text-to-motion/server.py:
-    _pose_anny_from_soma`."""
+def _load_kimodo_npz(path: Path, device: str):
+    """Kimodo emits `local_rot_mats (T,J,3,3)` and `root_positions (T,3)`.
+    Generated-synthetic class per CLAUDE.md (sampler output)."""
     import numpy as np
     import roma
     import torch
-    data = np.load(str(kimodo_npz_path), allow_pickle=False)
-    local_rot_mats = torch.from_numpy(np.asarray(data["local_rot_mats"])).to(device=device, dtype=torch.float32)
-    root_positions = torch.from_numpy(np.asarray(data["root_positions"])).to(device=device, dtype=torch.float32)
+    data = np.load(str(path), allow_pickle=False)
+    lrm = torch.from_numpy(np.asarray(data["local_rot_mats"])).to(device=device, dtype=torch.float32)
+    rp = torch.from_numpy(np.asarray(data["root_positions"])).to(device=device, dtype=torch.float32)
+    return lrm, rp
+
+
+def _load_soma_library(path: Path, device: str):
+    """SOMA/ANNY pose-library file. Constructed-synthetic class per
+    CLAUDE.md (deterministic assets, no learned sampler in the loop).
+    Same downstream shape as Kimodo: `(T,J,3,3)` local rotations +
+    `(T,3)` root translation. Schema shipped by ANCHOR alongside the
+    library enumeration.
+
+    TODO(implementation): ANCHOR is enumerating the library; once the
+    file schema lands, wire the loader here. Placeholder raises for now.
+    """
+    raise NotImplementedError(
+        "SOMA-library loader not yet wired; awaiting ANCHOR's library "
+        "enumeration + file-schema spec. See RFD 2203 followup on the "
+        "constructed-pose subset for the schema definition."
+    )
+
+
+def pose_anny_batched(anny_model, pose_path: Path, pose_kind: str, device: str):
+    """Load posed rotations from a Kimodo `.npz` or a SOMA-library
+    file (kind = 'kimodo' | 'soma-library'), apply anny per frame,
+    return posed vertices + bone poses + soma_pose per frame + the
+    raw upstream joint count. Rotvec conversion + root prepend copied
+    from `interactor-kimodo-text-to-motion/server.py:
+    _pose_anny_from_soma`.
+
+    The two pose kinds carry different synthetic-class semantics per
+    CLAUDE.md (kimodo=generated, soma-library=constructed); the
+    downstream shape is identical from anny's forward onward. The
+    manifest records `motion_source.kind` and derives
+    `synthetic_class` from it.
+    """
+    import roma
+    import torch
+    if pose_kind == "kimodo":
+        local_rot_mats, root_positions = _load_kimodo_npz(pose_path, device)
+    elif pose_kind == "soma-library":
+        local_rot_mats, root_positions = _load_soma_library(pose_path, device)
+    else:
+        raise RuntimeError(f"unknown pose_kind={pose_kind!r}; expected 'kimodo' or 'soma-library'")
     T, J = int(local_rot_mats.shape[0]), int(local_rot_mats.shape[1])
     if J not in (77, 78):
         raise RuntimeError(f"unexpected SOMA joint count J={J}")
@@ -269,10 +309,22 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
     """
     with open(pth_path, "rb") as f:
         pth_sha = hashlib.sha256(f.read()).hexdigest()
+    # Derive synthetic_class from motion_source.kind per CLAUDE.md's
+    # generated vs constructed distinction. Kimodo output comes from a
+    # diffusion sampler = generated; SOMA-library poses are
+    # deterministic assets we hold = constructed. #65 training must
+    # see at least one constructed subset per condition 3 of the
+    # generated-synthetic rule (not the sole distribution for a model
+    # deployed on real inputs).
+    SYNTHETIC_CLASS_BY_KIND = {"kimodo": "generated", "soma-library": "constructed"}
+    synthetic_class = SYNTHETIC_CLASS_BY_KIND.get(motion_source.get("kind"))
+    if synthetic_class is None:
+        raise RuntimeError(f"motion_source.kind={motion_source.get('kind')!r} does not map to a synthetic_class")
     manifest = {
         "wholebody133_pth_sha256": pth_sha,
         "observed_soma_joint_count_raw": observed_J,
         "motion_source": motion_source,
+        "synthetic_class": synthetic_class,     # derived, not asked separately; the source of truth is motion_source.kind
         "sampler_config": sampler_config,
         "split_config": split_config,
         "render_seed": seed,
@@ -350,7 +402,11 @@ def split_train_val(rows: list, val_fraction: float, seed: int) -> tuple[list, l
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--motion-dir", required=True, help="Directory of Kimodo .npz motion files")
+    ap.add_argument("--pose-dir", required=True, help="Directory of pose source files (Kimodo .npz or SOMA-library files)")
+    ap.add_argument("--pose-kind", choices=["kimodo", "soma-library"], required=True,
+                    help="Pose source class. kimodo = generated synthetic (diffusion sampler); "
+                         "soma-library = constructed synthetic (deterministic assets). "
+                         "Determines the manifest's synthetic_class per CLAUDE.md.")
     ap.add_argument("--pth", required=True, help="Path to wholebody133.pth")
     ap.add_argument("--out-dir", required=True, help="Output directory for the shard + manifest")
     ap.add_argument("--n-views", type=int, default=8, help="hammersley view count (RFD 2203: 8 first, additive 16 later)")
@@ -377,8 +433,9 @@ def main() -> int:
     rows = []
     observed_J_raw = None
     verify_result_agg = None
-    for motion_path in sorted(Path(args.motion_dir).glob("*.npz")):
-        posed = pose_anny_batched(anny_model, motion_path, device)
+    glob_pattern = "*.npz" if args.pose_kind == "kimodo" else "*.pose"  # SOMA-library ext TBD; adjust when ANCHOR ships the schema
+    for motion_path in sorted(Path(args.pose_dir).glob(glob_pattern)):
+        posed = pose_anny_batched(anny_model, motion_path, args.pose_kind, device)
         if observed_J_raw is None:
             # R2: RAW upstream count from local_rot_mats.shape[1] before
             # rotvec conversion. soma_pose.shape[1] is always 77
@@ -435,14 +492,17 @@ def main() -> int:
         "seed": args.seed,             # fresh per subset (not stable across subsets by design)
     }
 
-    # R5: motion_source as a structured object, not a free-form string.
-    # TODO(first-subset review): fill from the actual motion pool the
-    # first render draws from.
+    # R5: motion_source as a structured object with a `kind` enum
+    # that CLAUDE.md's synthetic classes derive from
+    # (kimodo=generated, soma-library=constructed). Manifest also
+    # records the derived synthetic_class so a consumer never has to
+    # rediscover the mapping.
     motion_source = {
-        "repo": "TODO(first-subset review): e.g. weftspun/anny-render-corpus",
-        "commit": "TODO(first-subset review): git rev of the motion set",
+        "kind": args.pose_kind,           # enum: 'kimodo' | 'soma-library'
+        "repo": "TODO(first-subset review): e.g. weftspun/anny-render-corpus or nv-tlabs/kimodo",
+        "commit": "TODO(first-subset review): git rev of the motion set or Kimodo checkpoint",
         "categories": ["walk", "crouch", "getup"],  # per RFD 2203 review convergence
-        "npz_count": len(list(Path(args.motion_dir).glob("*.npz"))),
+        "file_count": len(list(Path(args.pose_dir).glob(glob_pattern))),
     }
 
     # Build the rule-3-complete projection_check: 6 fingertips from the
