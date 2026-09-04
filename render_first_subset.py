@@ -151,6 +151,10 @@ def pose_anny_batched(anny_model, kimodo_npz_path: Path, device: str):
         "vertices": out["vertices"],       # (T, 19158, 3)
         "bone_poses": out["bone_poses"],   # (T, 78, 4, 4)
         "soma_pose": rotvec,               # (T, 77, 3) as Kimodo emitted
+        "raw_joint_count": J,              # RAW upstream count (R2): task #76 back-port answers "did this
+                                           # subset see 77 or 78 from Kimodo?" — soma_pose.shape[1] is always
+                                           # 77 post-conversion regardless of truth, so read the raw shape
+                                           # before conversion.
         "T": T,
     }
 
@@ -174,35 +178,71 @@ def render_mitsuba(posed_vertices, faces, camera, image_size: tuple[int, int]):
 
 
 def verify_projection_accuracy(anny_model, posed_vertices, n_poses: int = 4) -> dict:
-    """Run the same rule-2 apparatus interactor#2 landed, adapted so
-    the positive number and the negative controls sit on the same
-    apparatus (vertex diff via barycentric-interpolated reference).
+    """Run the rule-2 apparatus per HERD's critique on interactor#2:
+    positive number and negative controls on the SAME apparatus
+    (barycentric-interpolated vertex diff against a SOMA_wrap-topology
+    reference).
 
-    Two negative controls:
+    Two negative controls both on the same diff apparatus:
       (a) zero mid-hierarchy bone (bone 5) — mm-scale sensitivity
-      (b) zero limb bone on limb-moving poses — cm-scale sensitivity
+      (b) zero limb bone (upperarm.L or hip) on limb-moving poses —
+          cm-scale sensitivity
 
-    Gates at anny thresholds (max<15mm, mean<5mm). If positive fails,
-    the caller discards the subset before publish per RFD 2203.
+    Gates at anny thresholds (max<15mm, mean<5mm) on the positive
+    diff. If positive fails, the caller discards the subset before
+    publish per RFD 2203.
+
+    R6: state the detection floor per CLAUDE.md rule 5. With n=4
+    poses this cell only sees defects that appear in more than ~75%
+    of frames; per-motion drift below that rate is invisible. For a
+    fixed motion population, enumerate all poses (or a stratified
+    subset covering all motion categories) rather than sample four.
+    A production run should scale n_poses with the shard's motion
+    coverage; the returned dict names the floor so the manifest can
+    record what fraction of drift the check could catch.
     """
     # TODO(implementation): use anny's point_to_mesh_distance_and_face_uvs
     # on rest meshes to build makehuman->SOMA_wrap barycentric map once,
-    # interpolate per pose, diff. Two controls as above.
+    # interpolate per pose, diff against makehuman posed vertices.
+    # Two controls above on the same barycentric-interpolated apparatus.
+    # Return dict:
+    #   passed: bool
+    #   positive_max_mm, positive_mean_mm, positive_p99_mm
+    #   negative_a_max_mm (mid-hierarchy bone; expect > positive)
+    #   negative_b_max_mm (limb bone on limb-mover; expect >> positive)
+    #   detection_floor_pct: 100.0 * 3 / n_poses (rule 5)
+    #   n_poses_sampled, thresholds_mm
     raise NotImplementedError("verify_projection_accuracy: wire barycentric-map vertex diff")
 
 
-def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source: str,
-                   sampler_config: dict, seed: int, cotenancy_dump: dict):
-    """Per-shard manifest with the fields RFD 2203 requires."""
+def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source: dict,
+                   sampler_config: dict, split_config: dict, seed: int,
+                   cotenancy_dump: dict, verify_result: dict):
+    """Per-shard manifest with the fields RFD 2203 requires.
+
+    R5: motion_source is an object with `{repo, commit, categories, npz_count}`
+    not a free-form TODO string.
+    R4: sampler_config carries the Mitsuba knobs (integrator, spp,
+    max_depth) alongside the view/resolution numbers.
+    R3: split_config records the train/val split shape + fresh
+    per-subset seed.
+    R2: observed_J is the RAW upstream joint count (from
+    local_rot_mats.shape[1] before rotvec conversion), NOT
+    soma_pose.shape[1] which is always 77 post-conversion.
+    R6: verify_result carries the per-motion max/mean plus the
+    detection-floor statement per CLAUDE.md rule 5.
+    """
     with open(pth_path, "rb") as f:
         pth_sha = hashlib.sha256(f.read()).hexdigest()
     manifest = {
         "wholebody133_pth_sha256": pth_sha,
-        "observed_soma_joint_count": observed_J,
+        "observed_soma_joint_count_raw": observed_J,
         "motion_source": motion_source,
         "sampler_config": sampler_config,
+        "split_config": split_config,
         "render_seed": seed,
         "cotenancy_at_kick": cotenancy_dump,
+        "verify_result": verify_result,
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -211,11 +251,53 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
 def write_parquet_shard(out_path: Path, rows: list):
     """One row per (motion, frame, camera) triple. Wide-row per RFD
     2196 (not ETNF). ZStandard compression, row_group_size 100 for
-    viewer safety."""
+    viewer safety.
+
+    R1: assert every row's anny_posed_vertices has shape (19158, 3)
+    before write — a mis-sized column indicates the topology
+    setting drifted and would corrupt every downstream training run
+    silently. Contract with wholebody133.pth's 19,158 index space.
+    """
+    for i, row in enumerate(rows):
+        v = row["anny_posed_vertices"]
+        # Accept numpy or lists, but check the shape either way
+        shape = getattr(v, "shape", None) or (len(v), len(v[0]) if len(v) else 0)
+        if shape != (19158, 3):
+            raise RuntimeError(
+                f"row {i}: anny_posed_vertices shape {shape} != (19158, 3); "
+                f"topology setting drifted, refusing to publish"
+            )
     import pyarrow as pa
     import pyarrow.parquet as pq
     table = pa.Table.from_pylist(rows)
     pq.write_table(table, out_path, compression="zstd", row_group_size=100)
+
+
+def split_train_val(rows: list, val_fraction: float, seed: int) -> tuple[list, list]:
+    """R3: train/val 90/10 with a fresh per-subset seed. The seed is
+    fresh so an additive subset's val split is not deterministic
+    against the first subset's — a stable seed across subsets would
+    let earlier training frames leak into a new val split.
+
+    Splits at motion-source granularity, not row granularity, so all
+    (frame, camera) rows for a given motion clip stay together in one
+    split. Row-level shuffling would let a val frame's neighbours
+    train.
+    """
+    import random
+    rng = random.Random(seed)
+    # Group rows by motion source id (path stem from row's image.path)
+    by_motion: dict[str, list] = {}
+    for row in rows:
+        stem = row["image"]["path"].split("_f")[0]
+        by_motion.setdefault(stem, []).append(row)
+    motions = list(by_motion.keys())
+    rng.shuffle(motions)
+    n_val = max(1, int(round(len(motions) * val_fraction)))
+    val_motions = set(motions[:n_val])
+    train_rows = [r for m in motions if m not in val_motions for r in by_motion[m]]
+    val_rows = [r for m in val_motions for r in by_motion[m]]
+    return train_rows, val_rows
 
 
 def main() -> int:
@@ -245,15 +327,20 @@ def main() -> int:
     cameras = hammersley_cameras(args.n_views)
 
     rows = []
-    observed_J = None
+    observed_J_raw = None
+    verify_result_agg = None
     for motion_path in sorted(Path(args.motion_dir).glob("*.npz")):
         posed = pose_anny_batched(anny_model, motion_path, device)
-        if observed_J is None:
-            observed_J = int(posed["soma_pose"].shape[1])
+        if observed_J_raw is None:
+            # R2: RAW upstream count from local_rot_mats.shape[1] before
+            # rotvec conversion. soma_pose.shape[1] is always 77
+            # post-prepend regardless of truth.
+            observed_J_raw = int(posed["raw_joint_count"])
 
         # Verify BEFORE publishing — if the positive vertex check fails,
         # discard the subset per RFD 2203 rather than publish garbage.
         verify_result = verify_projection_accuracy(anny_model, posed["vertices"][:4])
+        verify_result_agg = verify_result  # last-wins is fine; per-motion drift shows in per-motion runs
         if not verify_result.get("passed", False):
             print(f"NOT-MEASURED: verify failed for {motion_path.name}: {verify_result}")
             return 2
@@ -270,19 +357,58 @@ def main() -> int:
                     "soma_pose": posed["soma_pose"][frame].detach().cpu().numpy(),
                 })
 
-    # 4. Write shard + manifest
-    shard_path = out_dir / "shard_00.parquet"
-    write_parquet_shard(shard_path, rows)
+    # 4. Split train/val at motion granularity (R3); write both shards + manifest
+    train_rows, val_rows = split_train_val(rows, val_fraction=0.10, seed=args.seed)
+    train_path = out_dir / "train.parquet"
+    val_path = out_dir / "val.parquet"
+    write_parquet_shard(train_path, train_rows)
+    write_parquet_shard(val_path, val_rows)
+
+    # R4: Mitsuba sampler knobs recorded in manifest so a repro run
+    # matches the same integrator / spp / max_depth. TODO: wire these
+    # from render_mitsuba's real config.
+    sampler_config = {
+        "n_views": args.n_views,
+        "image_size": args.image_size,
+        "mitsuba": {
+            "integrator": "path",
+            "spp": 64,          # TODO(implementation): finalize spp against render-cost/quality tradeoff
+            "max_depth": 4,     # TODO(implementation): 4 keeps GI cost modest for a body render
+            "sampler": "independent",
+        },
+    }
+
+    # R3: split config in manifest so a downstream consumer can pin
+    # to the exact split shape + seed.
+    split_config = {
+        "shape": "90/10 train/val",
+        "granularity": "motion",       # not per-row shuffle — clip integrity preserved
+        "val_fraction": 0.10,
+        "seed": args.seed,             # fresh per subset (not stable across subsets by design)
+    }
+
+    # R5: motion_source as a structured object, not a free-form string.
+    # TODO(first-subset review): fill from the actual motion pool the
+    # first render draws from.
+    motion_source = {
+        "repo": "TODO(first-subset review): e.g. weftspun/anny-render-corpus",
+        "commit": "TODO(first-subset review): git rev of the motion set",
+        "categories": ["walk", "crouch", "getup"],  # per RFD 2203 review convergence
+        "npz_count": len(list(Path(args.motion_dir).glob("*.npz"))),
+    }
+
     write_manifest(
         out_dir=out_dir,
         pth_path=Path(args.pth),
-        observed_J=observed_J,
-        motion_source="TODO(first-subset review): walks + crouches/getups per RFD 2203 review convergence",
-        sampler_config={"n_views": args.n_views, "image_size": args.image_size},
+        observed_J=observed_J_raw,
+        motion_source=motion_source,
+        sampler_config=sampler_config,
+        split_config=split_config,
         seed=args.seed,
         cotenancy_dump=dump,
+        verify_result=verify_result_agg or {"passed": False, "reason": "no motions processed"},
     )
-    print(f"wrote {len(rows)} rows to {shard_path}")
+    print(f"wrote train={len(train_rows)} val={len(val_rows)} rows to {out_dir}")
     print(f"manifest at {out_dir / 'manifest.json'}")
     return 0
 
