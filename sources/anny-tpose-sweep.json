@@ -1,7 +1,7 @@
 {
-  "$schema_note": "Constructed motion-source descriptor for the corpus's `soma-library` subset per RFD 2203. Satisfies CLAUDE.md's generated-synthetic condition 3 for the corpus as a whole: the corpus must carry at least one constructed-pose subset before any training run consumes it. The renderer reads this file to know which base rest poses to render, and how to procedurally build parameterised variations from them.",
+  "$schema_note": "Constructed motion-source descriptor for the corpus's `anny-tpose-sweep` subset per RFD 2203. Satisfies CLAUDE.md's generated-synthetic condition 3 for the corpus as a whole: the corpus must carry at least one constructed-pose subset before any training run consumes it. The renderer reads this file to know which base rest poses to render, and how to procedurally build parameterised variations from them.",
   "motion_source": {
-    "name": "soma-library",
+    "name": "anny-tpose-sweep",
     "synthetic_class": "constructed",
     "source_class": "assets we hold",
     "description": "Rest poses shipped with ANNY under `data/mpfb2/poses/*/t-pose.json` plus deterministic parameterised variations. All pose joint rotations derive from JSON files or from a documented parameter sweep; no sampling from a generative model."
@@ -51,19 +51,19 @@
     "expected_pose_count_notes": "7 arm-L * 7 arm-R * 5 hip * 4 knee-L * 4 knee-R * 5 spine * 5 head-yaw * 3 head-pitch = 8820 per base if all combined; smaller in practice because most combinations are symmetric or anatomically extreme. The renderer subsamples to a per-subset target count named in the shard manifest's sampler_config."
   },
   "renderer_hook": {
-    "consumed_by": "6-datasource/anny-soma-corpus/render_first_subset.py --motion-source soma-library --source-manifest sources/soma-library.json",
+    "consumed_by": "6-datasource/anny-soma-corpus/render_first_subset.py --motion-source anny-tpose-sweep --source-manifest sources/anny-tpose-sweep.json",
     "expected_row_shape": "RFD 2203 hybrid row unchanged; anny_posed_vertices is computed by anny.Anny(rig='soma', topology=TopologyConfig(base_mesh='makehuman', remove_unattached_vertices=False))(pose_parameters=constructed_from_base_and_sweep, ...); soma_pose is the per-frame (77, 3) rotvec array the sweep constructed"
   },
   "provenance": {
     "condition_1_generator": "n/a (no generator; deterministic parameter sweep from CC0 rest poses)",
-    "condition_2_stored_separately": "this file names motion_source=soma-library; the shard manifest's motion_source field records it, distinct from any kimodo subset",
-    "condition_3_not_sole_distribution": "this subset's existence is what satisfies condition 3 for the corpus. Without at least one soma-library (or equivalent constructed-pose) subset in the corpus, any Kimodo-only training run violates CLAUDE.md's generated-synthetic condition 3",
+    "condition_2_stored_separately": "this file names motion_source=anny-tpose-sweep; the shard manifest's motion_source field records it, distinct from any kimodo subset",
+    "condition_3_not_sole_distribution": "this subset's existence is what satisfies condition 3 for the corpus. Without at least one anny-tpose-sweep (or equivalent constructed-pose) subset in the corpus, any Kimodo-only training run violates CLAUDE.md's generated-synthetic condition 3",
     "condition_4_evaluation_on_real_or_constructed": "blinded holdout coco_person_commercial_val2017 remains the evaluation set per CLAUDE.md; this subset is training-only",
     "rendering_class": "constructed synthetic; deterministic sweep of documented joint ranges applied to CC0 rest poses; same seed reproduces the corpus"
   },
   "authoring": {
     "author": "K. S. Ernest (iFire) Lee (github.com/fire)",
     "authored": "2026-09-04",
-    "task": "HERD 2026-09-04 task 1: enumerate constructed motion source; produce a manifest for a soma-library subset that satisfies CLAUDE.md's condition 3 for the corpus"
+    "task": "HERD 2026-09-04 task 1: enumerate constructed motion source; produce a manifest for a anny-tpose-sweep subset that satisfies CLAUDE.md's condition 3 for the corpus"
   }
 }

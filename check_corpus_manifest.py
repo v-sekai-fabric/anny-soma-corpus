@@ -34,10 +34,10 @@ REQUIRED_MANIFEST_KEYS = (
 )
 WHOLEBODY133_ANCHOR_COUNT = 133
 PROJECTION_CHECK_KINDS = ("body_surface", "bone_tracking", "none")
-MOTION_SOURCE_NAMES = ("soma-library", "kimodo")
-CONSTRUCTED_MOTION_SOURCES = frozenset(("soma-library",))
+MOTION_SOURCE_NAMES = ("anny-tpose-sweep", "kimodo")
+CONSTRUCTED_MOTION_SOURCES = frozenset(("anny-tpose-sweep",))
 SYNTHETIC_CLASS_FOR = {
-    "soma-library": "constructed",
+    "anny-tpose-sweep": "constructed",
     "kimodo": "constructed-renders-over-generated-poses",
 }
 REQUIRED_ROW_COLUMNS = (
@@ -170,7 +170,7 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
 
 
 def check_corpus(root: pathlib.Path) -> list[str]:
-    """Corpus-level gate: at least one subset carries motion_source=soma-library (or another
+    """Corpus-level gate: at least one subset carries motion_source=anny-tpose-sweep (or another
     entry in CONSTRUCTED_MOTION_SOURCES). CLAUDE.md generated-synthetic condition 3: a Kimodo-
     only corpus is not the sole distribution for a model deployed on real inputs, so at least
     one constructed-pose subset must be present before any training run consumes the corpus.
@@ -218,8 +218,8 @@ def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
         {"anchor": "kpt_%d" % i, "kind": "body_surface"}
         for i in range(WHOLEBODY133_ANCHOR_COUNT)
     ]
-    manifest["motion_source"] = {"name": "soma-library"}
-    manifest["synthetic_class"] = SYNTHETIC_CLASS_FOR["soma-library"]
+    manifest["motion_source"] = {"name": "anny-tpose-sweep"}
+    manifest["synthetic_class"] = SYNTHETIC_CLASS_FOR["anny-tpose-sweep"]
     (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     (root / "README.md").write_text("---\nconfigs:\n- config_name: default\n  data_files: '*.parquet'\n---\n", encoding="utf-8")
 
@@ -386,7 +386,7 @@ def self_test() -> int:
 
         mixed_root = root / "mixed_corpus"
         mixed_root.mkdir()
-        for i, ms in enumerate(("soma-library", "kimodo")):
+        for i, ms in enumerate(("anny-tpose-sweep", "kimodo")):
             sub = mixed_root / ("subset-%02d-%s" % (i, ms))
             sub.mkdir()
             _plant_good_shard(sub, pth_sha)

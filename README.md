@@ -86,7 +86,7 @@ constructed/generated line:
 
 | motion source | synthetic class | manifest `motion_source` |
 | --- | --- | --- |
-| ANNY / SOMA pose library (assets we hold, deterministic) | constructed | `soma-library` |
+| ANNY / SOMA pose library (assets we hold, deterministic) | constructed | `anny-tpose-sweep` |
 | Kimodo (a diffusion sampler) | **constructed renders over generated poses** | `kimodo` |
 
 Renders are constructed either way — the pixels come from Mitsuba rendering ANNY posed
@@ -101,7 +101,7 @@ bind on those subsets:
 2. **Stored and manifested separately from constructed and real data** — each subset's own
    commit set + `motion_source` label satisfies this by construction.
 3. **Not the sole distribution for a model deployed on real inputs.** *Corpus-level
-   invariant:* the corpus must carry at least one constructed-pose subset (`soma-library`
+   invariant:* the corpus must carry at least one constructed-pose subset (`anny-tpose-sweep`
    or equivalent) before any training run consumes it. `check_corpus_manifest.py` asserts
    this at the corpus level, not just per-shard.
 4. **Evaluation uses real or constructed data only** — the blinded holdout
