@@ -115,13 +115,30 @@ def load_anny_model(device: str):
     ).to(device=device, dtype=torch.float32)
 
 
-def hammersley_cameras(n_views: int) -> list:
-    """`sphere_hammersley_sequence` per CLAUDE.md convention 6.
-    TODO(first-subset review): 8 views per RFD 2203 review convergence.
+def hammersley_cameras(n_views: int, fov_deg: float = 40.0) -> list:
+    """Sphere-hammersley view schedule per CLAUDE.md convention 6.
+    Imports `render_view.sphere_hammersley` + `camera` from
+    anny-render-corpus (the vetted Z-up port of Pixal3D's function at
+    cdbb2bb; "why not an orbit" argument in that module's header).
+    Returns per-view dicts carrying yaw/pitch/eye/radius; the actual
+    Mitsuba render call in render_mitsuba() derives its own camera
+    the same way, so this list is metadata for the manifest + row
+    assembly rather than the render input.
     """
-    # Ref implementation lives in `anny-render-corpus` per prior work;
-    # for the draft return placeholder camera dicts.
-    return [{"view_index": i, "extrinsics": None, "intrinsics": None} for i in range(n_views)]
+    import sys
+    sys.path.insert(0, r"C:/weftspun-keypoints/6-datasource/anny-render-corpus")
+    import render_view
+    cameras = []
+    for i in range(n_views):
+        eye, yaw, pitch, radius = render_view.camera(i, n_views, fov_deg, offset=(0.0, 0.0))
+        cameras.append({
+            "view_index": i,
+            "yaw_rad": yaw, "pitch_rad": pitch,
+            "eye": [float(x) for x in eye],
+            "radius": float(radius),
+            "fov_deg": float(fov_deg),
+        })
+    return cameras
 
 
 def _load_kimodo_npz(path: Path, device: str):
@@ -199,22 +216,138 @@ def pose_anny_batched(anny_model, pose_path: Path, pose_kind: str, device: str):
     }
 
 
-def regress_keypoints_2d(anny_model, posed_vertices, camera):
-    """Read `wholebody133.pth` weights, apply to posed vertices per
-    KeypointsRegressor.load_precomputed. Project to 2D via camera.
-    Return (133, 3) with (x, y, visible)."""
-    # TODO(implementation): wire `anny.keypoints.KeypointsRegressor`
-    # against `wholebody133.pth` (path from anny-keypoint-anchors main).
-    # Visibility via Z-test against depth from the same camera.
-    raise NotImplementedError("regress_keypoints_2d: wire KeypointsRegressor + camera projection")
+_ANCHOR_WEIGHTS_CACHE = {"weights": None, "labels": None, "sha": None}
 
 
-def render_mitsuba(posed_vertices, faces, camera, image_size: tuple[int, int]):
-    """Mitsuba 3 render at (H, W). TODO(first-subset review): 384x384
-    per RFD 2203 review convergence."""
-    # TODO(implementation): mitsuba pipeline (scene dict from anny mesh
-    # + camera, integrator=path, spp modest).
-    raise NotImplementedError("render_mitsuba: wire Mitsuba 3 scene + render")
+def _load_anchor_weights(pth_path: Path):
+    """Load `wholebody133.pth` weights once, cache. Returns (labels,
+    weights_tensor). Weights are (133, 19158)."""
+    import torch
+    if _ANCHOR_WEIGHTS_CACHE["weights"] is None or _ANCHOR_WEIGHTS_CACHE["sha"] != str(pth_path):
+        pth = torch.load(str(pth_path), weights_only=True)
+        labels = list(pth.keys())
+        weights = torch.stack([pth[k] for k in labels], dim=0)  # (133, 19158)
+        _ANCHOR_WEIGHTS_CACHE["weights"] = weights
+        _ANCHOR_WEIGHTS_CACHE["labels"] = labels
+        _ANCHOR_WEIGHTS_CACHE["sha"] = str(pth_path)
+    return _ANCHOR_WEIGHTS_CACHE["labels"], _ANCHOR_WEIGHTS_CACHE["weights"]
+
+
+def regress_keypoints_2d(pth_path: Path, posed_vertices, camera_sidecar: dict,
+                         aov_depth_png: Path = None, image_size: int = 384):
+    """Regress 133 keypoints from posed vertices via wholebody133.pth
+    anchors, project to 2D via the camera sidecar's world→image
+    transform. Returns (133, 3) with (x, y, visible).
+
+    posed_vertices: (19158, 3) — the same vertices from
+      pose_anny_batched (before render_view's unit-cube normalization,
+      so we apply the sidecar's normalization here).
+    camera_sidecar: dict from render_view's sidecar json — carries
+      eye/yaw/pitch/radius/fov + normalisation.centre + scale.
+    aov_depth_png: optional AOV depth pass for Z-test visibility.
+    image_size: render resolution for the (u,v) frame coords.
+
+    Visibility policy: default 2 = visible; if aov_depth_png given
+    and the projected point's Z exceeds depth[u,v] by >5mm, mark 1
+    (occluded, projected inside frame); if outside frame, mark 0.
+    """
+    import math
+    import numpy as np
+    import torch
+
+    labels, weights = _load_anchor_weights(pth_path)  # weights: (133, 19158)
+    verts_np = posed_vertices.detach().cpu().numpy() if hasattr(posed_vertices, 'detach') else np.asarray(posed_vertices)
+
+    # Regress to 3D world (before normalization)
+    kp_world = weights.cpu().numpy() @ verts_np  # (133, 3)
+
+    # Apply render_view's normalization so the point sits in the same
+    # unit-cube frame the camera looks at.
+    norm = camera_sidecar.get("normalisation", {})
+    centre = np.asarray(norm.get("centre", [0, 0, 0]), dtype=np.float64)
+    scale = float(norm.get("scale", 1.0))
+    kp_norm = (kp_world - centre) * scale  # (133, 3), unit-cube coords
+
+    # Camera basis from the sidecar (Z-up matches ANNY + render_view).
+    yaw = float(camera_sidecar["yaw_rad"])
+    pitch = float(camera_sidecar["pitch_rad"])
+    fov_deg = float(camera_sidecar["fov_deg"])
+    eye = np.asarray(camera_sidecar["eye"], dtype=np.float64)
+
+    # World→camera: look-at from eye toward origin, Z up.
+    forward = -eye / np.linalg.norm(eye)
+    up = np.array([0.0, 0.0, 1.0])
+    right = np.cross(forward, up); right /= np.linalg.norm(right)
+    up_c = np.cross(right, forward)
+    # Camera-space (right-hand): x=right, y=up_c, z=-forward
+    rel = kp_norm - eye
+    cam_x = rel @ right
+    cam_y = rel @ up_c
+    cam_z = -(rel @ forward)  # positive in front of camera
+
+    # Perspective project to normalized image coords, then to pixel space.
+    focal_norm = 1.0 / math.tan(math.radians(fov_deg) / 2.0)
+    u_ndc = (cam_x / cam_z) * focal_norm
+    v_ndc = (cam_y / cam_z) * focal_norm
+    # NDC in [-1, +1] → pixel [0, image_size]; flip v because image Y goes down
+    u_px = (u_ndc + 1.0) * 0.5 * image_size
+    v_px = (1.0 - (v_ndc + 1.0) * 0.5) * image_size
+
+    in_frame = (cam_z > 0) & (u_px >= 0) & (u_px < image_size) & (v_px >= 0) & (v_px < image_size)
+    visible = np.where(in_frame, 2, 0).astype(np.float32)
+
+    # AOV depth Z-test if available
+    if aov_depth_png is not None and Path(aov_depth_png).exists():
+        try:
+            from PIL import Image
+            depth = np.asarray(Image.open(aov_depth_png), dtype=np.float32)
+            for i in range(133):
+                if not in_frame[i]:
+                    continue
+                iu, iv = int(u_px[i]), int(v_px[i])
+                # depth is Z distance from camera in the same units as cam_z
+                if float(cam_z[i]) > float(depth[iv, iu]) + 0.005:  # 5mm slack
+                    visible[i] = 1  # projects inside silhouette but fails Z-test
+        except Exception:
+            # Depth read failure — leave in-frame verdict unchanged rather than
+            # silently marking everything as visible or occluded.
+            pass
+
+    return np.stack([u_px, v_px, visible], axis=-1).astype(np.float32)  # (133, 3)
+
+
+def render_mitsuba(posed_vertices, faces, view_index: int, n_views: int,
+                   fov_deg: float, image_size: int, work: Path, spp: int = 16):
+    """Render one (frame, view) via anny-render-corpus's render_view.
+    Writes a temp mesh.npz + calls render_view.render(), which emits
+    PNG + AOV npz + JSON sidecar. Returns (png_bytes, sidecar_dict,
+    aov_npz_path_or_none).
+
+    Uses `variant=llvm_ad_rgb` for bit-reproducibility (the same
+    determinism-measured default anny-render-corpus uses; see its
+    render_view.py header for why cuda/metal aren't in the default
+    fallback).
+    """
+    import sys as _sys
+    _sys.path.insert(0, r"C:/weftspun-keypoints/6-datasource/anny-render-corpus")
+    import render_view
+    import numpy as np
+
+    verts_np = posed_vertices.detach().cpu().numpy() if hasattr(posed_vertices, 'detach') else np.asarray(posed_vertices)
+    faces_np = faces.detach().cpu().numpy() if hasattr(faces, 'detach') else np.asarray(faces)
+
+    mesh_npz = work / f"mesh_v{view_index:03d}.npz"
+    out_png = work / f"view_{view_index:03d}.png"
+    np.savez(str(mesh_npz), verts=verts_np.astype(np.float64), faces=faces_np.astype(np.int64))
+
+    sidecar = render_view.render(
+        mesh_npz=str(mesh_npz), out_png=out_png,
+        index=view_index, views=n_views, fov_deg=fov_deg, offset=(0.0, 0.0),
+        spp=spp, threads=1, variant="llvm_ad_rgb",
+        distance=1.0, direction=None, aov=True,
+    )
+    aov_npz = out_png.with_suffix(".aov.npz")
+    return out_png.read_bytes(), sidecar, (aov_npz if aov_npz.exists() else None)
 
 
 def verify_projection_accuracy(anny_model, posed_vertices, n_poses: int = 4) -> dict:
@@ -474,11 +607,23 @@ def main() -> int:
 
         for frame in range(posed["T"]):
             for cam in cameras:
-                img_bytes = render_mitsuba(posed["vertices"][frame], anny_model.faces, cam, (args.image_size, args.image_size))
-                kp2d = regress_keypoints_2d(anny_model, posed["vertices"][frame], cam)
+                img_bytes, sidecar, aov_path = render_mitsuba(
+                    posed["vertices"][frame], anny_model.faces,
+                    view_index=cam["view_index"], n_views=args.n_views,
+                    fov_deg=cam["fov_deg"], image_size=args.image_size,
+                    work=out_dir / "_render_tmp",
+                )
+                # AOV depth PNG path lives beside the color PNG. If aov_path
+                # is an .aov.npz (as anny-render-corpus emits), skip Z-test
+                # depth via a separate PNG — leave that follow-up wiring for
+                # a future refinement subset that needs occlusion labels.
+                kp2d = regress_keypoints_2d(
+                    Path(args.pth), posed["vertices"][frame], sidecar,
+                    aov_depth_png=None, image_size=args.image_size,
+                )
                 rows.append({
-                    "image": {"bytes": img_bytes, "path": f"{motion_path.stem}_f{frame:04d}_v{cam['view_index']}.png"},
-                    "camera": cam["extrinsics"],  # TODO: pack extrinsics + intrinsics
+                    "image": {"bytes": img_bytes, "path": f"{motion_path.stem}_f{frame:04d}_v{cam['view_index']:03d}.png"},
+                    "camera": sidecar,  # per-view JSON sidecar per HERD S6 (intrinsics via fov + normalization; extrinsics via eye/yaw/pitch)
                     "anny_posed_vertices": posed["vertices"][frame].detach().cpu().numpy(),
                     "keypoints_2d": kp2d,
                     "soma_pose": posed["soma_pose"][frame].detach().cpu().numpy(),
