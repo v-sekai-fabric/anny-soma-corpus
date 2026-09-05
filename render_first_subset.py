@@ -153,7 +153,7 @@ def _load_kimodo_npz(path: Path, device: str):
     return lrm, rp
 
 
-def _load_soma_library(path: Path, device: str):
+def _load_anny_tpose_sweep(path: Path, device: str):
     """SOMA/ANNY pose-library file. Constructed-synthetic class per
     CLAUDE.md (deterministic assets, no learned sampler in the loop).
     Same downstream shape as Kimodo: `(T,J,3,3)` local rotations +
@@ -172,14 +172,14 @@ def _load_soma_library(path: Path, device: str):
 
 def pose_anny_batched(anny_model, pose_path: Path, pose_kind: str, device: str):
     """Load posed rotations from a Kimodo `.npz` or a SOMA-library
-    file (kind = 'kimodo' | 'soma-library'), apply anny per frame,
+    file (kind = 'kimodo' | 'anny-tpose-sweep'), apply anny per frame,
     return posed vertices + bone poses + soma_pose per frame + the
     raw upstream joint count. Rotvec conversion + root prepend copied
     from `interactor-kimodo-text-to-motion/server.py:
     _pose_anny_from_soma`.
 
     The two pose kinds carry different synthetic-class semantics per
-    CLAUDE.md (kimodo=generated, soma-library=constructed); the
+    CLAUDE.md (kimodo=generated, anny-tpose-sweep=constructed); the
     downstream shape is identical from anny's forward onward. The
     manifest records `motion_source.kind` and derives
     `synthetic_class` from it.
@@ -188,10 +188,10 @@ def pose_anny_batched(anny_model, pose_path: Path, pose_kind: str, device: str):
     import torch
     if pose_kind == "kimodo":
         local_rot_mats, root_positions = _load_kimodo_npz(pose_path, device)
-    elif pose_kind == "soma-library":
-        local_rot_mats, root_positions = _load_soma_library(pose_path, device)
+    elif pose_kind == "anny-tpose-sweep":
+        local_rot_mats, root_positions = _load_anny_tpose_sweep(pose_path, device)
     else:
-        raise RuntimeError(f"unknown pose_kind={pose_kind!r}; expected 'kimodo' or 'soma-library'")
+        raise RuntimeError(f"unknown pose_kind={pose_kind!r}; expected 'kimodo' or 'anny-tpose-sweep'")
     T, J = int(local_rot_mats.shape[0]), int(local_rot_mats.shape[1])
     if J not in (77, 78):
         raise RuntimeError(f"unexpected SOMA joint count J={J}")
@@ -449,7 +449,7 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
     # see at least one constructed subset per condition 3 of the
     # generated-synthetic rule (not the sole distribution for a model
     # deployed on real inputs).
-    SYNTHETIC_CLASS_BY_KIND = {"kimodo": "generated", "soma-library": "constructed"}
+    SYNTHETIC_CLASS_BY_KIND = {"kimodo": "generated", "anny-tpose-sweep": "constructed"}
     synthetic_class = SYNTHETIC_CLASS_BY_KIND.get(motion_source.get("kind"))
     if synthetic_class is None:
         raise RuntimeError(f"motion_source.kind={motion_source.get('kind')!r} does not map to a synthetic_class")
@@ -457,13 +457,13 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
     # Derive sweep_ranges from motion_source.kind. ANCHOR's #10 landed
     # the NASA RP-1024 Vol.I Ch.VI Tables 1 & 2 envelope (PD via
     # 17 USC 105) and tightened the sweep's ranges against it. For
-    # soma-library subsets built off that sweep, the manifest cites
+    # anny-tpose-sweep subsets built off that sweep, the manifest cites
     # the envelope; for kimodo subsets the sweep envelope doesn't
     # apply (Kimodo poses come from a sampler, not a sweep), so the
     # field records "hand-picked" — the honest placeholder that the
     # kimodo subset carries no sweep-derived envelope. Both values
     # are in ANCHOR's SWEEP_RANGES_VALUES allowlist.
-    SWEEP_RANGES_BY_KIND = {"kimodo": "hand-picked", "soma-library": "anatomy-rom-envelope"}
+    SWEEP_RANGES_BY_KIND = {"kimodo": "hand-picked", "anny-tpose-sweep": "anatomy-rom-envelope"}
     sweep_ranges = SWEEP_RANGES_BY_KIND.get(motion_source.get("kind"), "hand-picked")
     manifest = {
         "wholebody133_pth_sha256": pth_sha,
@@ -496,7 +496,7 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
         # when those land in follow-up subsets. Gate script asserts
         # the field is present with an allowlisted value; "none"
         # explicit is legal, missing is not.
-        "sweep_ranges": sweep_ranges,   # derived above from motion_source.kind; kimodo → "hand-picked", soma-library → "anatomy-rom-envelope" (ANCHOR #10)
+        "sweep_ranges": sweep_ranges,   # derived above from motion_source.kind; kimodo → "hand-picked", anny-tpose-sweep → "anatomy-rom-envelope" (ANCHOR #10)
         "pose_validation": "none",       # or "rfd_0007" once foot-Y+joint-limit gate lands
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
@@ -558,9 +558,9 @@ def split_train_val(rows: list, val_fraction: float, seed: int) -> tuple[list, l
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pose-dir", required=True, help="Directory of pose source files (Kimodo .npz or SOMA-library files)")
-    ap.add_argument("--pose-kind", choices=["kimodo", "soma-library"], required=True,
+    ap.add_argument("--pose-kind", choices=["kimodo", "anny-tpose-sweep"], required=True,
                     help="Pose source class. kimodo = generated synthetic (diffusion sampler); "
-                         "soma-library = constructed synthetic (deterministic assets). "
+                         "anny-tpose-sweep = constructed synthetic (deterministic assets). "
                          "Determines the manifest's synthetic_class per CLAUDE.md.")
     ap.add_argument("--pth", required=True, help="Path to wholebody133.pth")
     ap.add_argument("--out-dir", required=True, help="Output directory for the shard + manifest")
@@ -661,11 +661,11 @@ def main() -> int:
 
     # R5: motion_source as a structured object with a `kind` enum
     # that CLAUDE.md's synthetic classes derive from
-    # (kimodo=generated, soma-library=constructed). Manifest also
+    # (kimodo=generated, anny-tpose-sweep=constructed). Manifest also
     # records the derived synthetic_class so a consumer never has to
     # rediscover the mapping.
     motion_source = {
-        "kind": args.pose_kind,           # enum: 'kimodo' | 'soma-library'
+        "kind": args.pose_kind,           # enum: 'kimodo' | 'anny-tpose-sweep'
         "repo": "TODO(first-subset review): e.g. weftspun/anny-render-corpus or nv-tlabs/kimodo",
         "commit": "TODO(first-subset review): git rev of the motion set or Kimodo checkpoint",
         "categories": ["walk", "crouch", "getup"],  # per RFD 2203 review convergence
