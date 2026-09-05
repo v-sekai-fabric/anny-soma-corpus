@@ -38,7 +38,7 @@ MOTION_SOURCE_NAMES = ("anny-tpose-sweep", "kimodo")
 CONSTRUCTED_MOTION_SOURCES = frozenset(("anny-tpose-sweep",))
 SYNTHETIC_CLASS_FOR = {
     "anny-tpose-sweep": "constructed",
-    "kimodo": "constructed-renders-over-generated-poses",
+    "kimodo": "generated",
 }
 # Rule-3 fields on every subset manifest. `hand-picked` and `none` are legal explicit
 # values until an anatomy-based joint envelope and RFD 0007's per-pose validator exist;
@@ -112,16 +112,21 @@ def check_subset(subset: pathlib.Path, anchors_pth: pathlib.Path | None) -> list
                            "quantity noun (%s)" % (key, ", ".join(QUANTITY_NOUNS)))
 
     ms = manifest.get("motion_source")
-    ms_name = ms.get("name") if isinstance(ms, dict) else ms
-    if ms_name not in MOTION_SOURCE_NAMES:
-        bad.append("motion_source.name %r not in %s (RFD 2203)"
-                   % (ms_name, MOTION_SOURCE_NAMES))
+    ms_kind = ms.get("kind") if isinstance(ms, dict) else ms
+    if isinstance(ms, dict) and "name" in ms and "kind" not in ms:
+        bad.append("motion_source uses legacy field 'name'; align on 'kind' per HERD "
+                   "2026-09-04 F1 alignment (kind is the enum-value word, name was "
+                   "descriptive prose in an enum slot)")
+    if ms_kind not in MOTION_SOURCE_NAMES:
+        bad.append("motion_source.kind %r not in %s (RFD 2203)"
+                   % (ms_kind, MOTION_SOURCE_NAMES))
     else:
         sc = manifest.get("synthetic_class")
-        expected = SYNTHETIC_CLASS_FOR[ms_name]
+        expected = SYNTHETIC_CLASS_FOR[ms_kind]
         if sc != expected:
-            bad.append("synthetic_class %r for motion_source %r must be %r "
-                       "(CLAUDE.md constructed vs generated)" % (sc, ms_name, expected))
+            bad.append("synthetic_class %r for motion_source.kind %r must be %r "
+                       "(CLAUDE.md canonical 'constructed' vs 'generated')"
+                       % (sc, ms_kind, expected))
 
     if manifest.get("sweep_ranges") not in SWEEP_RANGES_VALUES:
         bad.append("sweep_ranges %r not in %s. Rule 3: unchecked things are named and "
@@ -229,7 +234,7 @@ def check_corpus(root: pathlib.Path) -> list[str]:
         except json.JSONDecodeError:
             continue
         ms = m.get("motion_source")
-        sources.append(ms.get("name") if isinstance(ms, dict) else ms)
+        sources.append(ms.get("kind") if isinstance(ms, dict) else ms)
     if not any(s in CONSTRUCTED_MOTION_SOURCES for s in sources):
         bad.append("corpus has %d subset(s) with motion_source names %s but none is in "
                    "CONSTRUCTED_MOTION_SOURCES (%s). CLAUDE.md generated-synthetic condition "
@@ -260,7 +265,7 @@ def _plant_good_shard(root: pathlib.Path, pth_sha: str) -> None:
         {"anchor": "kpt_%d" % i, "kind": "body_surface"}
         for i in range(WHOLEBODY133_ANCHOR_COUNT)
     ]
-    manifest["motion_source"] = {"name": "anny-tpose-sweep"}
+    manifest["motion_source"] = {"kind": "anny-tpose-sweep"}
     manifest["synthetic_class"] = SYNTHETIC_CLASS_FOR["anny-tpose-sweep"]
     manifest["sweep_ranges"] = "hand-picked"
     manifest["pose_validation"] = "none"
@@ -399,7 +404,7 @@ def self_test() -> int:
         unknown_ms.mkdir()
         _plant_good_shard(unknown_ms, pth_sha)
         manifest = json.loads((unknown_ms / "manifest.json").read_text(encoding="utf-8"))
-        manifest["motion_source"] = {"name": "not-in-enum"}
+        manifest["motion_source"] = {"kind": "not-in-enum"}
         (unknown_ms / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         cases.append(("motion_source not in enum rejected",
                       check_subset(unknown_ms, pth_file), False))
@@ -408,11 +413,29 @@ def self_test() -> int:
         wrong_class.mkdir()
         _plant_good_shard(wrong_class, pth_sha)
         manifest = json.loads((wrong_class / "manifest.json").read_text(encoding="utf-8"))
-        manifest["motion_source"] = {"name": "kimodo"}
+        manifest["motion_source"] = {"kind": "kimodo"}
         manifest["synthetic_class"] = "constructed"
         (wrong_class / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         cases.append(("kimodo mislabelled as constructed rejected",
                       check_subset(wrong_class, pth_file), False))
+
+        legacy_name = root / "legacy_name_field"
+        legacy_name.mkdir()
+        _plant_good_shard(legacy_name, pth_sha)
+        manifest = json.loads((legacy_name / "manifest.json").read_text(encoding="utf-8"))
+        manifest["motion_source"] = {"name": "anny-tpose-sweep"}
+        (legacy_name / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("legacy motion_source.name field rejected (F1)",
+                      check_subset(legacy_name, pth_file), False))
+
+        non_canon = root / "non_canonical_synthetic_class"
+        non_canon.mkdir()
+        _plant_good_shard(non_canon, pth_sha)
+        manifest = json.loads((non_canon / "manifest.json").read_text(encoding="utf-8"))
+        manifest["synthetic_class"] = "constructed-renders-over-generated-poses"
+        (non_canon / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        cases.append(("non-canonical synthetic_class value rejected (F2)",
+                      check_subset(non_canon, pth_file), False))
 
         kimodo_only_root = root / "kimodo_only_corpus"
         kimodo_only_root.mkdir()
@@ -421,7 +444,7 @@ def self_test() -> int:
             sub.mkdir()
             _plant_good_shard(sub, pth_sha)
             m = json.loads((sub / "manifest.json").read_text(encoding="utf-8"))
-            m["motion_source"] = {"name": "kimodo"}
+            m["motion_source"] = {"kind": "kimodo"}
             m["synthetic_class"] = SYNTHETIC_CLASS_FOR["kimodo"]
             (sub / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
         corpus_bad = check_corpus(kimodo_only_root)
@@ -467,7 +490,7 @@ def self_test() -> int:
             sub.mkdir()
             _plant_good_shard(sub, pth_sha)
             m = json.loads((sub / "manifest.json").read_text(encoding="utf-8"))
-            m["motion_source"] = {"name": ms}
+            m["motion_source"] = {"kind": ms}
             m["synthetic_class"] = SYNTHETIC_CLASS_FOR[ms]
             (sub / "manifest.json").write_text(json.dumps(m), encoding="utf-8")
         corpus_ok = check_corpus(mixed_root)
