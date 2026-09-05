@@ -320,6 +320,18 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
     synthetic_class = SYNTHETIC_CLASS_BY_KIND.get(motion_source.get("kind"))
     if synthetic_class is None:
         raise RuntimeError(f"motion_source.kind={motion_source.get('kind')!r} does not map to a synthetic_class")
+
+    # Derive sweep_ranges from motion_source.kind. ANCHOR's #10 landed
+    # the NASA RP-1024 Vol.I Ch.VI Tables 1 & 2 envelope (PD via
+    # 17 USC 105) and tightened the sweep's ranges against it. For
+    # soma-library subsets built off that sweep, the manifest cites
+    # the envelope; for kimodo subsets the sweep envelope doesn't
+    # apply (Kimodo poses come from a sampler, not a sweep), so the
+    # field records "hand-picked" — the honest placeholder that the
+    # kimodo subset carries no sweep-derived envelope. Both values
+    # are in ANCHOR's SWEEP_RANGES_VALUES allowlist.
+    SWEEP_RANGES_BY_KIND = {"kimodo": "hand-picked", "soma-library": "anatomy-rom-envelope"}
+    sweep_ranges = SWEEP_RANGES_BY_KIND.get(motion_source.get("kind"), "hand-picked")
     manifest = {
         "wholebody133_pth_sha256": pth_sha,
         "observed_soma_joint_count_raw": observed_J,
@@ -351,7 +363,7 @@ def write_manifest(out_dir: Path, pth_path: Path, observed_J: int, motion_source
         # when those land in follow-up subsets. Gate script asserts
         # the field is present with an allowlisted value; "none"
         # explicit is legal, missing is not.
-        "sweep_ranges": "hand-picked",   # or "<source>" once anatomy ROM envelope lands
+        "sweep_ranges": sweep_ranges,   # derived above from motion_source.kind; kimodo → "hand-picked", soma-library → "anatomy-rom-envelope" (ANCHOR #10)
         "pose_validation": "none",       # or "rfd_0007" once foot-Y+joint-limit gate lands
     }
     with open(out_dir / "manifest.json", "w", encoding="utf-8") as f:
