@@ -11,7 +11,7 @@
     "us_pd_basis": "17 USC 105 (works of the US federal government are not subject to copyright in the US)",
     "verified_via": "WebFetch on the NTRS record page 2026-09-04; the excerpt of RP-1024 Vol.II's NTRS record at https://ntrs.nasa.gov/citations/19790005540 carries the same explicit statement",
     "verified_extract": "The NTRS record for NASA RP-1024-VOL-1 lists Copyright Status: 'Work of the US Gov. Public Use Permitted.' and Distribution: 'Public'.",
-    "table_provenance_caveat": "Table 1 reproduces data originally published in Barter, Emanuel and Truett 1957 (a WADC Technical Report — Wright Air Development Center, US Air Force — also a US federal work per 17 USC 105). Table 2 reproduces data from Harris and Harris 1968. NASA's reproduction of these tables in RP-1024 is itself PD; the underlying WADC report is PD by the same 17 USC 105 basis. Harris and Harris 1968 provenance not independently verified in this pass — noted per rule 3."
+    "table_provenance_caveat": "Table 1 reproduces data originally published in Barter, Emanuel and Truett 1957 (a WADC Technical Report \u2014 Wright Air Development Center, US Air Force \u2014 also a US federal work per 17 USC 105). NASA's reproduction of these tables in RP-1024 is itself PD; the underlying WADC report is PD by the same 17 USC 105 basis. Table 2 was originally verified 2026-09-04 (issue #11): Harris ML. 'A factor analytic study of flexibility.' Research Quarterly 40(1):62-70, March 1969 (PubMed 5252465), published by Taylor & Francis for AAHPER/SHAPE America under subscription \u2014 COPYRIGHTED, not PD. NASA cited the 1968 conference presentation of the same work at AAHPER's Research Section, St. Louis. NASA's reproduction remains PD; downstream publication citing the female P5-P95 rows directly should verify against Harris 1969 and comply with Taylor & Francis's licence, or re-source from a PD-clean publication."
   },
   "axes": [
     {
@@ -19,7 +19,7 @@
       "sweep_axis_note": "shoulder flexion (arm forward-up)",
       "envelope_min_deg": -61,
       "envelope_max_deg": 208,
-      "percentile_basis": "P5-P95 from male data (extension P95 61°, flexion P95 208°) taken as an anatomically-plausible-population envelope; NASA RP-1024 Vol.I Table 1",
+      "percentile_basis": "P5-P95 from male data (extension P95 61\u00b0, flexion P95 208\u00b0) taken as an anatomically-plausible-population envelope; NASA RP-1024 Vol.I Table 1",
       "source": "nasa-rp-1024-v1-ch-vi-t1",
       "source_page": "VI-5",
       "source_pd_verified": true
@@ -39,7 +39,7 @@
       "sweep_axis_note": "hip flexion (thigh forward-up); extension is thigh backward",
       "envelope_min_deg": -51,
       "envelope_max_deg": 134,
-      "percentile_basis": "P5-P95 from male data (hip extension range indirectly from adduction P95 51°; hip flexion P95 134°); NASA RP-1024 Vol.I Table 1. Hip extension in the male table is not listed as its own row; using -51 as a conservative envelope from adjacent measurements.",
+      "percentile_basis": "P5-P95 from male data (hip extension range indirectly from adduction P95 51\u00b0; hip flexion P95 134\u00b0); NASA RP-1024 Vol.I Table 1. Hip extension in the male table is not listed as its own row; using -51 as a conservative envelope from adjacent measurements.",
       "source": "nasa-rp-1024-v1-ch-vi-t1",
       "source_page": "VI-5",
       "source_pd_verified": true
@@ -49,7 +49,7 @@
       "sweep_axis_note": "knee flexion voluntary (standing)",
       "envelope_min_deg": 0,
       "envelope_max_deg": 174,
-      "percentile_basis": "P5=92° (voluntary standing) to P95=174° (forced kneeling); NASA RP-1024 Vol.I Table 1 rows 'Knee flexion, voluntary (standing)' and 'Knee flexion forced (kneeling)'",
+      "percentile_basis": "P5=92\u00b0 (voluntary standing) to P95=174\u00b0 (forced kneeling); NASA RP-1024 Vol.I Table 1 rows 'Knee flexion, voluntary (standing)' and 'Knee flexion forced (kneeling)'",
       "source": "nasa-rp-1024-v1-ch-vi-t1",
       "source_page": "VI-5",
       "source_pd_verified": true
@@ -69,30 +69,39 @@
       "sweep_axis_note": "thoracolumbar spine flexion+extension; RP-1024 female data (male not explicitly tabulated by same row)",
       "envelope_min_deg": -29,
       "envelope_max_deg": 76,
-      "percentile_basis": "spine extension mean 29° taken as negative side; spine flexion P95 approx mean+SD*1.645 ≈ 76°; NASA RP-1024 Vol.I Table 2 (female data), rows 'Spine flexion' and 'Spine extension'",
+      "percentile_basis": "spine extension mean 29\u00b0 taken as negative side; spine flexion P95 approx mean+SD*1.645 \u2248 76\u00b0; NASA RP-1024 Vol.I Table 2 (female data), rows 'Spine flexion' and 'Spine extension'",
       "source": "nasa-rp-1024-v1-ch-vi-t2",
       "source_page": "VI-6",
-      "source_pd_verified": true
+      "source_pd_verified": true,
+      "primary_source_status": "verified-copyrighted-2026-09-04",
+      "primary_source_citation": "Harris ML. A factor analytic study of flexibility. Research Quarterly 40(1):62-70, March 1969 (PubMed 5252465). Taylor & Francis for AAHPER/SHAPE America.",
+      "resource_action": "issue-anny-soma-corpus-12 (re-source from a PD-clean publication)"
     },
     {
       "sweep_axis": "head yaw",
       "sweep_axis_note": "neck rotation left/right",
       "envelope_min_deg": -100,
       "envelope_max_deg": 100,
-      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck rotation, right' (mean 83.1°, SD 10.2°) and 'Neck rotation, left' (mean 78.5°, SD 11.2°); ±100° is an inclusive P95 envelope",
+      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck rotation, right' (mean 83.1\u00b0, SD 10.2\u00b0) and 'Neck rotation, left' (mean 78.5\u00b0, SD 11.2\u00b0); \u00b1100\u00b0 is an inclusive P95 envelope",
       "source": "nasa-rp-1024-v1-ch-vi-t2",
       "source_page": "VI-6",
-      "source_pd_verified": true
+      "source_pd_verified": true,
+      "primary_source_status": "verified-copyrighted-2026-09-04",
+      "primary_source_citation": "Harris ML. A factor analytic study of flexibility. Research Quarterly 40(1):62-70, March 1969 (PubMed 5252465). Taylor & Francis for AAHPER/SHAPE America.",
+      "resource_action": "issue-anny-soma-corpus-12 (re-source from a PD-clean publication)"
     },
     {
       "sweep_axis": "head pitch",
       "sweep_axis_note": "neck flexion (chin-to-chest) + extension (head back)",
       "envelope_min_deg": -106,
       "envelope_max_deg": 76,
-      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck flexion' (mean 58.7°, SD 10.3°) and 'Neck extension' (mean 89.3°, SD 9.9°); envelope covers -106° (P95 extension) to +76° (P95 flexion)",
+      "percentile_basis": "P95 approx mean+SD*1.645; NASA RP-1024 Vol.I Table 2 rows 'Neck flexion' (mean 58.7\u00b0, SD 10.3\u00b0) and 'Neck extension' (mean 89.3\u00b0, SD 9.9\u00b0); envelope covers -106\u00b0 (P95 extension) to +76\u00b0 (P95 flexion)",
       "source": "nasa-rp-1024-v1-ch-vi-t2",
       "source_page": "VI-6",
-      "source_pd_verified": true
+      "source_pd_verified": true,
+      "primary_source_status": "verified-copyrighted-2026-09-04",
+      "primary_source_citation": "Harris ML. A factor analytic study of flexibility. Research Quarterly 40(1):62-70, March 1969 (PubMed 5252465). Taylor & Francis for AAHPER/SHAPE America.",
+      "resource_action": "issue-anny-soma-corpus-12 (re-source from a PD-clean publication)"
     }
   ],
   "authoring": {
@@ -103,7 +112,7 @@
   },
   "sweep_envelope_check": {
     "current_sweep_ranges_source": "sources/anny-tpose-sweep.json's joint_sweeps block",
-    "current_sweep_status": "every current sweep range fits inside the corresponding envelope entry: upperarm ±90 vs envelope [-61, 208]; hip ±60 vs [-51, 134]; knee [0, 90] vs [0, 174]; spine ±30 vs [-29, 76]; head yaw ±60 vs [-100, 100]; head pitch ±30 vs [-106, 76]",
+    "current_sweep_status": "every current sweep range fits inside the corresponding envelope entry: upperarm \u00b190 vs envelope [-61, 208]; hip \u00b160 vs [-51, 134]; knee [0, 90] vs [0, 174]; spine \u00b130 vs [-29, 76]; head yaw \u00b160 vs [-100, 100]; head pitch \u00b130 vs [-106, 76]",
     "envelope_use": "sources/anny-tpose-sweep.json cites this file; check_corpus_manifest.py's SWEEP_RANGES_VALUES enum gains 'anatomy-rom-envelope' as the new legal value; render_first_subset.py writes sweep_ranges='anatomy-rom-envelope' for subsets built from this envelope",
     "gate_control_shape": "a sweep entry whose range exceeds its envelope entry fails a companion check; a deliberately hyperextended sweep (envelope-violating) is the negative control"
   }
