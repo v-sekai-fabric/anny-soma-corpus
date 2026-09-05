@@ -114,8 +114,16 @@ references:
       `sources/anatomy-rom-envelope.json`). Table 1 reproduces data from
       Barter, Emanuel and Truett 1957 (a WADC Technical Report — Wright
       Air Development Center, US Air Force, also PD by 17 USC 105).
-      Table 2 reproduces data from Harris and Harris 1968; provenance not
-      independently verified this pass, noted per CLAUDE.md rule 3.
+      Table 2 reproduces data from Harris and Harris 1968; provenance
+      verified 2026-09-04 (issue #11 closed 2026-09-04): the underlying
+      work is Harris ML. "A factor analytic study of flexibility."
+      Research Quarterly 40(1):62-70, March 1969 (PubMed 5252465),
+      published by Taylor & Francis for AAHPER/SHAPE America under
+      subscription — COPYRIGHTED, not PD. NASA cited the 1968 conference
+      presentation. NASA's reproduction remains PD; direct citation of
+      the underlying Harris 1969 rows requires Taylor & Francis
+      compliance. Re-source from a PD-clean publication tracked in
+      issue #12.
   # RFD 2196 -- the HF publishing rules
   - type: generic
     title: "RFD 2196: HuggingFace dataset viewer rules"
