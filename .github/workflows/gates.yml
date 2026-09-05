@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+#
+# check_corpus_manifest.py in CI. Two jobs; both fail the check run.
+#
+# WHAT CI CAN AND CANNOT CHECK, NAMED RATHER THAN OMITTED. The self-test plants
+# eight known-broken inputs and asserts the gate rejects each. It exercises F1
+# (motion_source.kind vs legacy .name), F2 (canonical synthetic_class values),
+# condition 3 (a corpus of only generated subsets), rule-3 fields
+# (sweep_ranges, pose_validation), and the anatomy ROM envelope both directions
+# (a compliant sweep passes, a hyperextended sweep is rejected). It runs in
+# every environment because it fabricates its inputs inline.
+#
+# The envelope-check reads the two in-repo source files (sources/anny-tpose-
+# sweep.json + sources/anatomy-rom-envelope.json) and asserts the sweep sits
+# inside the envelope. It runs anywhere the repo is checked out; no shards,
+# no manifest, no external data.
+#
+# What CI CANNOT do is run --subset or --corpus against a rendered subset.
+# The renders are gigabytes, live on the desktop GPU boxes, and are not in
+# this repo. Those two modes are exercised locally at render time. A silent
+# skip reads exactly like a pass, so this paragraph exists to stop that
+# reading.
+
+name: gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Controls first. A gate whose controls have not run yet is a gate
+      # nobody has reason to believe.
+      - name: negative controls
+        run: python check_corpus_manifest.py --self-test
+      # The sweep source fits inside the anatomy ROM envelope. Stdlib only;
+      # no pip install step because the gate reads only the two in-repo
+      # source JSONs.
+      - name: sweep source fits the anatomy ROM envelope
+        run: python check_corpus_manifest.py --envelope-check
