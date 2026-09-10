@@ -26,7 +26,7 @@ name: gates
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main/main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
